@@ -1,0 +1,52 @@
+[tool.poetry]
+name = "diplom"
+version = "0.1.0"
+description = "HRM/TRM research scaffold with configurable schedulers and datasets."
+authors = ["vovochka <you@example.com>"]
+readme = "README.md"
+packages = [{ include = "diplom", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+numpy = "^2.0.0"
+pandas = "^2.2.0"
+pyarrow = "^19.0.0"
+torch = "^2.5.0"
+datasets = "^4.0.0"
+transformers = "^4.50.0"
+huggingface-hub = "^0.28.0"
+requests = "^2.32.0"
+yfinance = "^0.2.50"
+jsonargparse = { version = "^4.41.0", extras = ["signatures"] }
+pyyaml = "^6.0.2"
+tqdm = "^4.67.0"
+rich = "^13.9.0"
+matplotlib = "^3.10.0"
+tensorboard = "^2.19.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+ruff = "^0.9.0"
+
+[tool.poetry.scripts]
+diplom-data = "diplom.cli.data:main"
+diplom-train = "diplom.cli.train:main"
+diplom-validate = "diplom.cli.validate:main"
+diplom-plot = "diplom.cli.plot:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+

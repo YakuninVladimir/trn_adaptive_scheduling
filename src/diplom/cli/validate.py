@@ -10,6 +10,24 @@ def build_parser() -> ArgumentParser:
     )
     p.add_argument("--config", required=True, help="Path to experiment YAML config.")
     p.add_argument("--checkpoint", default=None, help="Optional path to model checkpoint.")
+    p.add_argument(
+        "--oracle-policy",
+        default="none",
+        choices=["none", "greedy", "sampling"],
+        help="Inference policy for TRMOracle recursion budget selection.",
+    )
+    p.add_argument(
+        "--oracle-max-steps",
+        type=int,
+        default=None,
+        help="Maximum reasoning steps during oracle inference (can exceed N_sup).",
+    )
+    p.add_argument(
+        "--oracle-temperature",
+        type=float,
+        default=1.0,
+        help="Sampling temperature for --oracle-policy sampling.",
+    )
     return p
 
 
@@ -18,7 +36,13 @@ def main() -> None:
     args = parser.parse_args()
     from diplom.runner.validate import validate_from_yaml  # lazy import
 
-    validate_from_yaml(args.config, checkpoint_path=args.checkpoint)
+    validate_from_yaml(
+        args.config,
+        checkpoint_path=args.checkpoint,
+        oracle_policy=args.oracle_policy,
+        oracle_max_steps=args.oracle_max_steps,
+        oracle_temperature=args.oracle_temperature,
+    )
 
 
 if __name__ == "__main__":

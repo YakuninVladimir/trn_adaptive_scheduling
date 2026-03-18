@@ -4,7 +4,21 @@ import json
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+# Force non-interactive backend for headless/WSL environments.
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+
+def _dedupe_last_by_step(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Keep the latest occurrence for each step (helps when logs from multiple runs were appended).
+    by_step: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        step = int(r.get("step", -1))
+        by_step[step] = r
+    return [by_step[s] for s in sorted(by_step.keys()) if s >= 0]
+
 
 def plot_run(run_dir: str, out_path: str | None = None) -> None:
     run_path = Path(run_dir)
@@ -27,31 +41,68 @@ def plot_run(run_dir: str, out_path: str | None = None) -> None:
     if not train_rows and not val_rows:
         raise RuntimeError(f"No records found in {metrics_path}")
 
-    fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    train_rows = _dedupe_last_by_step(train_rows)
+    val_rows = _dedupe_last_by_step(val_rows)
+
+    has_val = bool(val_rows)
+    nrows = 4 if has_val else 3
+    fig, axes = plt.subplots(nrows, 1, figsize=(11, 3.2 * nrows), sharex=True)
+    if nrows == 1:
+        axes = [axes]
 
     if train_rows:
         steps = [r["step"] for r in train_rows]
-        loss = [r.get("loss") for r in train_rows]
-        axes[0].plot(steps, loss, label="train_loss")
+        total_loss = [r.get("loss") for r in train_rows]
+        main_loss = [r.get("main_loss") for r in train_rows]
+        oracle_loss = [r.get("oracle_loss") for r in train_rows]
         used_sup = [r.get("used_sup") for r in train_rows]
-        if any(u is not None for u in used_sup):
-            ax2 = axes[0].twinx()
-            ax2.plot(steps, used_sup, color="tab:orange", alpha=0.5, label="used_sup")
-            ax2.set_ylabel("used_sup")
-        axes[0].set_ylabel("loss")
+
+        # 1) Main model loss (and optional total loss context).
+        axes[0].plot(steps, main_loss, label="train_main_loss", color="tab:blue")
+        if any(v is not None for v in total_loss):
+            axes[0].plot(steps, total_loss, label="train_loss_total", color="tab:gray", alpha=0.5)
+        axes[0].set_ylabel("main loss")
+        axes[0].legend(loc="upper right")
         axes[0].grid(True, alpha=0.3)
         axes[0].set_title(str(run_path))
 
-    if val_rows:
+        # 2) Oracle loss only.
+        axes[1].plot(steps, oracle_loss, label="train_oracle_loss", color="tab:green")
+        axes[1].set_ylabel("oracle loss")
+        axes[1].legend(loc="upper right")
+        axes[1].grid(True, alpha=0.3)
+
+        # 3) used_sup only.
+        axes[2].plot(steps, used_sup, label="used_sup", color="tab:orange")
+        axes[2].set_ylabel("used_sup")
+        axes[2].legend(loc="upper right")
+        axes[2].grid(True, alpha=0.3)
+
+    if has_val:
+        val_ax = axes[3]
         v_steps = [r["step"] for r in val_rows]
         keys = sorted({k for r in val_rows for k in r.keys()} - {"kind", "epoch", "step"})
         for k in keys:
-            axes[1].plot(v_steps, [r.get(k) for r in val_rows], label=f"val_{k}")
-        axes[1].legend()
-        axes[1].set_ylabel("val metrics")
-        axes[1].grid(True, alpha=0.3)
+            val_ax.plot(v_steps, [r.get(k) for r in val_rows], label=f"val_{k}")
+        # Overlay train accuracies for direct train-vs-val comparison.
+        if train_rows:
+            t_steps = [r["step"] for r in train_rows]
+            train_acc_keys = sorted(
+                k for k in {kk for r in train_rows for kk in r.keys()} if k.endswith("_acc")
+            )
+            for k in train_acc_keys:
+                val_ax.plot(
+                    t_steps,
+                    [r.get(k) for r in train_rows],
+                    label=f"train_{k}",
+                    linestyle="--",
+                    alpha=0.8,
+                )
+        val_ax.legend()
+        val_ax.set_ylabel("val metrics")
+        val_ax.grid(True, alpha=0.3)
 
-    axes[1].set_xlabel("global step")
+    axes[-1].set_xlabel("global step")
     fig.tight_layout()
 
     if out_path is None:

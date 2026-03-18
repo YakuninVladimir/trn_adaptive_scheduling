@@ -45,5 +45,28 @@ poetry run diplom-data timeseries-stocks --tickers AAPL MSFT
 
 ```bash
 poetry run diplom-train --config configs/sudoku_trm_cgar.yaml
+
+# live-обновление графиков во время обучения
+poetry run diplom-train --config configs/sudoku_trm_oracle_10min.yaml --live-plots --live-plot-every 20
+```
+
+### Быстрый прогон (~10 минут)
+
+```bash
+# 1) Маленький датасет
+poetry run diplom-data sudoku --dry-run false --materialize --subsample 100 --augment 10
+
+# 2) Быстрое обучение TRM+Oracle
+poetry run diplom-train --config configs/sudoku_trm_oracle_10min.yaml
+```
+
+### Валидация / Oracle inference policies
+
+```bash
+# Жадная политика (delta=0 тоже доступен: "остановиться сейчас")
+poetry run diplom-validate --config configs/sudoku_trm_oracle_10min.yaml --oracle-policy greedy --oracle-max-steps 32
+
+# Семплирование из распределения oracle (итеративно: sampled delta -> пройти delta шагов -> заново oracle)
+poetry run diplom-validate --config configs/sudoku_trm_oracle_10min.yaml --oracle-policy sampling --oracle-max-steps 32 --oracle-temperature 1.0
 ```
 

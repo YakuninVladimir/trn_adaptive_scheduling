@@ -21,6 +21,9 @@ class TrainConfig:
     ckpt_every: int = 200
     run_dir: str = "runs/dev"
     beta_halt: float = 0.5
+    progress_bar: bool = True
+    live_plots: bool = False
+    live_plot_every: int = 100
 
 
 @dataclass(frozen=True)

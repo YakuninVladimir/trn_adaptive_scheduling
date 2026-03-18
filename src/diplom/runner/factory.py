@@ -7,6 +7,7 @@ import torch
 
 from diplom.models.hrm import HRM, HRMConfig
 from diplom.models.trm import TRM, TRMConfig
+from diplom.models.trm_oracle import TRMOracle, TRMOracleConfig
 from diplom.runner.tasks.sudoku_task import SudokuTask, SudokuTaskConfig
 from diplom.runner.tasks.text_lm_task import TextLMTask, TextLMTaskConfig
 from diplom.runner.tasks.timeseries_task import TimeSeriesTask, TimeSeriesTaskConfig
@@ -52,6 +53,9 @@ def build_model(model_raw: dict[str, Any]) -> torch.nn.Module:
     if name == "trm":
         cfg = TRMConfig(**_filter_kwargs(TRMConfig, model_raw))
         return TRM(cfg)
+    if name in ("trm_oracle", "trm-lookahead"):
+        cfg = TRMOracleConfig(**_filter_kwargs(TRMOracleConfig, model_raw))
+        return TRMOracle(cfg)
     raise ValueError(f"Unknown model name: {name!r}")
 
 

@@ -9,7 +9,13 @@ from diplom.runner.factory import build_model, build_scheduler, build_task, reso
 from diplom.runner.train import _validate_loop
 
 
-def validate_from_yaml(config_path: str, checkpoint_path: str | None = None) -> None:
+def validate_from_yaml(
+    config_path: str,
+    checkpoint_path: str | None = None,
+    oracle_policy: str = "none",
+    oracle_max_steps: int | None = None,
+    oracle_temperature: float = 1.0,
+) -> None:
     exp = load_experiment_config(config_path)
     device = resolve_device(exp.train.device)
 
@@ -36,6 +42,9 @@ def validate_from_yaml(config_path: str, checkpoint_path: str | None = None) -> 
         scheduler=scheduler,
         max_epochs=exp.train.epochs,
         max_steps=exp.train.max_steps or exp.train.epochs * len(val_dl),
+        oracle_policy=oracle_policy,
+        oracle_max_steps=oracle_max_steps,
+        oracle_temperature=oracle_temperature,
     )
     ckpt_info = f"checkpoint={checkpoint_path}" if checkpoint_path else "checkpoint=None"
     print(f"[validate] {Path(config_path).name} {ckpt_info} metrics={metrics}")

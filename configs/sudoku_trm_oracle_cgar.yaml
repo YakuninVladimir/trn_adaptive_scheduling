@@ -1,0 +1,43 @@
+task:
+  name: sudoku
+  train_path: data/sudoku/sudoku-extreme-1k-aug-1000/train.csv
+  val_path: data/sudoku/sudoku-extreme-1k-aug-1000/test.csv
+
+model:
+  name: trm_oracle
+  vocab_size: 11
+  seq_len: 81
+  d_model: 256
+  n_heads: 8
+  n_layers: 2
+  use_attention: true
+  H_cycles: 3
+  L_cycles: 6
+  N_sup: 16
+  halt_head: false
+
+  oracle_max_steps: 16
+  oracle_horizon: 16
+  oracle_n_heads: 4
+  oracle_n_layers: 2
+  oracle_d_ff: 1024
+  oracle_dropout: 0.0
+  oracle_loss_weight: 1.0
+
+scheduler:
+  name: cgar
+  pdc_thresholds: [0.3, 0.6]
+  pdc_stages:
+    - [2, 1]
+    - [4, 2]
+    - [6, 3]
+  lambda_decay: 0.7
+
+train:
+  seed: 42
+  device: auto
+  epochs: 1
+  batch_size: 8
+  lr: 1.0e-4
+  run_dir: runs/dev_trm_oracle_cgar_sudoku
+

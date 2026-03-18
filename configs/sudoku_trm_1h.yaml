@@ -1,0 +1,45 @@
+task:
+  name: sudoku
+  train_path: data/sudoku/sudoku-extreme-1k-aug-1000/train.csv
+  val_path: data/sudoku/sudoku-extreme-1k-aug-1000/test.csv
+
+model:
+  name: trm
+  vocab_size: 11
+  seq_len: 81
+
+  # Same architecture as the 10-min config to keep behavior comparable.
+  d_model: 192
+  n_heads: 4
+  n_layers: 2
+  d_ff: 768
+  use_attention: true
+
+  H_cycles: 2
+  L_cycles: 3
+  N_sup: 8
+  halt_head: false
+
+scheduler:
+  name: cgar
+  pdc_thresholds: [0.3, 0.6]
+  pdc_stages:
+    - [1, 1]
+    - [2, 1]
+    - [2, 2]
+  lambda_decay: 0.8
+
+train:
+  seed: 42
+  device: auto
+  epochs: 2000
+  # Calibrated from ~7 min run of 3000 steps -> ~60 min target.
+  max_steps: 26000
+  batch_size: 256
+  lr: 2.0e-4
+  weight_decay: 0.1
+  log_every: 50
+  eval_every: 500
+  ckpt_every: 1000
+  progress_bar: true
+  run_dir: runs/trm_1h

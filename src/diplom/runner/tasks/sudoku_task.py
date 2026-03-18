@@ -18,23 +18,42 @@ class _SudokuCsvDataset(Dataset[TaskBatch]):
             raise FileNotFoundError(f"Sudoku CSV not found: {path}")
         self.seq_len = seq_len
         self.df = pd.read_csv(self.path)
-        if "puzzle" not in self.df.columns or "solution" not in self.df.columns:
-            raise ValueError(f"Expected columns puzzle/solution in {path}, got {list(self.df.columns)}")
+        cols = set(self.df.columns)
+        if {"puzzle", "solution"}.issubset(cols):
+            self.puzzle_col = "puzzle"
+            self.solution_col = "solution"
+        elif {"question", "answer"}.issubset(cols):
+            self.puzzle_col = "question"
+            self.solution_col = "answer"
+        else:
+            raise ValueError(
+                f"Expected columns puzzle/solution or question/answer in {path}, got {list(self.df.columns)}"
+            )
 
     def __len__(self) -> int:
         return len(self.df)
 
     def __getitem__(self, idx: int) -> TaskBatch:
         row = self.df.iloc[idx]
-        p = str(row["puzzle"]).strip()
-        s = str(row["solution"]).strip()
+        p = str(row[self.puzzle_col]).strip()
+        s = str(row[self.solution_col]).strip()
         if len(p) != self.seq_len or len(s) != self.seq_len:
             raise ValueError(f"Bad sudoku length at idx={idx}: puzzle={len(p)} solution={len(s)}")
-        x = torch.tensor([ord(c) - ord("0") for c in p], dtype=torch.long)
-        y = torch.tensor([ord(c) - ord("0") for c in s], dtype=torch.long)
+        x = torch.tensor([self._to_token(c) for c in p], dtype=torch.long)
+        y = torch.tensor([self._to_token(c) for c in s], dtype=torch.long)
         # all positions contribute
         mask = torch.ones(self.seq_len, dtype=torch.bool)
         return TaskBatch(x_tokens=x, y=y, y_mask=mask)
+
+    @staticmethod
+    def _to_token(c: str) -> int:
+        if c == ".":
+            return 0
+        if c.isdigit():
+            v = int(c)
+            if 0 <= v <= 9:
+                return v
+        raise ValueError(f"Unsupported sudoku token character: {c!r}")
 
 
 @dataclass(frozen=True)

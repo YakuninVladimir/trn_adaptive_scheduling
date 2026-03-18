@@ -1,0 +1,44 @@
+task:
+  name: sudoku
+  train_path: data/sudoku/sudoku-extreme-100-aug-10/train.csv
+  val_path: data/sudoku/sudoku-extreme-100-aug-10/test.csv
+
+model:
+  name: trm
+  vocab_size: 11
+  seq_len: 81
+
+  # Same backbone scale as oracle 10-min config for fair comparison.
+  d_model: 192
+  n_heads: 4
+  n_layers: 2
+  d_ff: 768
+  use_attention: true
+
+  H_cycles: 2
+  L_cycles: 3
+  N_sup: 8
+  halt_head: false
+
+scheduler:
+  name: cgar
+  pdc_thresholds: [0.3, 0.6]
+  pdc_stages:
+    - [1, 1]
+    - [2, 1]
+    - [2, 2]
+  lambda_decay: 0.8
+
+train:
+  seed: 42
+  device: auto
+  epochs: 200
+  max_steps: 3000
+  batch_size: 256
+  lr: 2.0e-4
+  weight_decay: 0.1
+  log_every: 20
+  eval_every: 200
+  ckpt_every: 500
+  progress_bar: true
+  run_dir: runs/quick_trm_10min

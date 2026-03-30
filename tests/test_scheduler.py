@@ -26,11 +26,11 @@ def test_cgar_pdc_stages_and_hsw_weights():
     assert (a1.recursion_n, a1.recursion_T) == (2, 1)
     assert 0.0 < a1.supervision_weight <= 1.0
 
-    s2 = SchedulerState(**{**s1.__dict__, "epoch": 4})
+    s2 = SchedulerState(**{**s1.__dict__, "global_step": 40})
     a2 = sch.get_schedule(s2, model_aux=None)
     assert (a2.recursion_n, a2.recursion_T) == (4, 2)
 
-    s3 = SchedulerState(**{**s1.__dict__, "epoch": 9})
+    s3 = SchedulerState(**{**s1.__dict__, "global_step": 90})
     a3 = sch.get_schedule(s3, model_aux=None)
     assert (a3.recursion_n, a3.recursion_T) == (6, 3)
 

@@ -18,9 +18,13 @@ class SchedulerState:
 
     @property
     def progress(self) -> float:
-        if self.max_epochs <= 0:
-            return 0.0
-        return min(max(self.epoch / self.max_epochs, 0.0), 1.0)
+        # Prefer step-based progress because curriculum scheduling is tied to
+        # optimization updates, not to epoch counters (which can be very long).
+        if self.max_steps > 0:
+            return min(max(self.global_step / self.max_steps, 0.0), 1.0)
+        if self.max_epochs > 0:
+            return min(max(self.epoch / self.max_epochs, 0.0), 1.0)
+        return 0.0
 
 
 @dataclass(frozen=True)

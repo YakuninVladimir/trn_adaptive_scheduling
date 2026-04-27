@@ -23,6 +23,11 @@ def build_parser() -> ArgumentParser:
 
     text = ArgumentParser(description="Text datasets (HuggingFace datasets).")
     text.add_argument("--name", required=True)
+    text.add_argument(
+        "--dataset-config",
+        default=None,
+        help="Optional HF dataset config/subset (e.g. wikitext-103-raw-v1).",
+    )
     text.add_argument("--split", default="train")
     text.add_argument(
         "--dry-run",

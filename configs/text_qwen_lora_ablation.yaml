@@ -1,0 +1,30 @@
+task:
+  name: wikitext_lm
+  dataset_name: wikitext
+  dataset_config: wikitext-103-raw-v1
+  split_train: train
+  split_val: validation
+  tokenizer: Qwen/Qwen2.5-0.5B
+  text_field: text
+  seq_len: 256
+
+model:
+  name: lora_ablation
+  base_model_name: Qwen/Qwen2.5-0.5B
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  N_sup: 1
+
+scheduler:
+  name: fixed
+  recursion_n: 1
+  recursion_T: 1
+
+train:
+  seed: 42
+  device: auto
+  epochs: 1
+  batch_size: 2
+  lr: 1.0e-4
+  run_dir: runs/text_qwen_lora_ablation

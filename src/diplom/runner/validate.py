@@ -6,7 +6,7 @@ import torch
 
 from diplom.runner.config import load_experiment_config
 from diplom.runner.factory import build_model, build_scheduler, build_task, resolve_device
-from diplom.runner.train import _validate_loop
+from diplom.runner.train import _resolve_amp_dtype, _validate_loop
 
 
 def validate_from_yaml(
@@ -33,6 +33,11 @@ def validate_from_yaml(
     if val_dl is None:
         raise SystemExit("No validation dataloader configured for this task.")
 
+    use_amp = bool(exp.train.amp) and device.type == "cuda"
+    amp_dtype = _resolve_amp_dtype(str(exp.train.amp_dtype))
+    if use_amp and amp_dtype == torch.bfloat16 and not torch.cuda.is_bf16_supported():
+        amp_dtype = torch.float16
+
     metrics = _validate_loop(
         model=model,
         task=task,
@@ -45,6 +50,8 @@ def validate_from_yaml(
         oracle_policy=oracle_policy,
         oracle_max_steps=oracle_max_steps,
         oracle_temperature=oracle_temperature,
+        use_amp=use_amp,
+        amp_dtype=amp_dtype,
     )
     ckpt_info = f"checkpoint={checkpoint_path}" if checkpoint_path else "checkpoint=None"
     print(f"[validate] {Path(config_path).name} {ckpt_info} metrics={metrics}")

@@ -11,6 +11,8 @@ class TaskBatch:
     x_tokens: torch.Tensor  # [B, L] int64
     y: torch.Tensor  # task-specific (often [B, L] int64)
     y_mask: torch.Tensor | None = None  # [B, L] bool, True where y contributes to loss/metrics
+    # Optional per-position loss weights [B, L] float (only positions with y_mask True are used).
+    y_weight: torch.Tensor | None = None
 
 
 def collate_task_batches(items: list[TaskBatch]) -> TaskBatch:
@@ -25,7 +27,11 @@ def collate_task_batches(items: list[TaskBatch]) -> TaskBatch:
         mask = None
     else:
         mask = torch.stack([it.y_mask for it in items], dim=0)
-    return TaskBatch(x_tokens=x, y=y, y_mask=mask)
+    if items[0].y_weight is None:
+        w = None
+    else:
+        w = torch.stack([it.y_weight for it in items], dim=0)
+    return TaskBatch(x_tokens=x, y=y, y_mask=mask, y_weight=w)
 
 
 class Task(Protocol):

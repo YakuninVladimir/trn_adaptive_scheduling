@@ -1,0 +1,39 @@
+task:
+  name: wikitext_lm
+  dataset_name: wikitext
+  dataset_config: wikitext-103-raw-v1
+  split_train: train
+  split_val: validation
+  tokenizer: Qwen/Qwen2.5-0.5B
+  text_field: text
+  seq_len: 256
+
+model:
+  name: trm_correction
+  base_model_name: Qwen/Qwen2.5-0.5B
+  vocab_size: 151936
+  seq_len: 256
+  d_model: 256
+  n_heads: 8
+  n_layers: 2
+  d_ff: 1024
+  use_attention: true
+  correction_iterations_mode: predicted
+  correction_fixed_steps: 2
+  correction_max_predicted_steps: 6
+  H_cycles: 1
+  L_cycles: 2
+  N_sup: 1
+
+scheduler:
+  name: fixed
+  recursion_n: 2
+  recursion_T: 1
+
+train:
+  seed: 42
+  device: auto
+  epochs: 1
+  batch_size: 2
+  lr: 1.0e-4
+  run_dir: runs/text_qwen_correction_trm

@@ -1,0 +1,49 @@
+# Локальная версия (ранее правки в sudoku_trm_cgar.yaml): batch 64, LR 5e-4, warmup + cosine.
+# Оригинал снова в sudoku_trm_cgar.yaml (как в git).
+task:
+  name: sudoku
+  train_path: data/sudoku/sudoku-extreme-1k-aug-1000/train.csv
+  val_path: data/sudoku/sudoku-extreme-1k-aug-1000/test.csv
+
+model:
+  name: trm
+  vocab_size: 11
+  seq_len: 81
+  d_model: 256
+  n_heads: 8
+  n_layers: 2
+  use_attention: true
+  H_cycles: 3
+  L_cycles: 6
+  N_sup: 16
+
+scheduler:
+  name: cgar
+  pdc_thresholds: [0.3, 0.6]
+  pdc_stages:
+    - [2, 1]
+    - [4, 2]
+    - [6, 3]
+  lambda_decay: 0.7
+
+train:
+  seed: 42
+  device: auto
+  epochs: 3
+  batch_size: 128
+  lr: 1.0e-3
+  warmup_steps: 800
+  lr_schedule: cosine
+  lr_min_ratio: 0.1
+  # oracle data storage
+  dump_oracle_trace: true
+  dump_oracle_trace_dir: oracle_traces
+  dump_oracle_trace_every: 1
+  dump_oracle_trace_shard_batches: 64
+  dump_oracle_trace_include_logits: true
+  dump_oracle_trace_include_state: true
+  dump_oracle_trace_fp16: true
+  # CUDA mixed precision (runner: autocast + GradScaler)
+  amp: true
+  amp_dtype: bfloat16
+  run_dir: runs/dev_trm_cgar_sudoku

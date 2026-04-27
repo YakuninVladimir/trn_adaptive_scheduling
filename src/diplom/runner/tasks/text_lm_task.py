@@ -12,23 +12,40 @@ from diplom.runner.tasks.base import TaskBatch, collate_task_batches
 
 
 class _TextLMDataset(Dataset[TaskBatch]):
-    def __init__(self, dataset_name: str, split: str, tokenizer_name: str, seq_len: int) -> None:
-        self.ds = load_dataset(dataset_name, split=split)
+    def __init__(
+        self,
+        dataset_name: str,
+        split: str,
+        tokenizer_name: str,
+        seq_len: int,
+        dataset_config: str | None = None,
+        text_field: str | None = None,
+        max_samples: int | None = None,
+    ) -> None:
+        if dataset_config:
+            self.ds = load_dataset(dataset_name, dataset_config, split=split)
+        else:
+            self.ds = load_dataset(dataset_name, split=split)
+        if max_samples is not None:
+            self.ds = self.ds.select(range(min(int(max_samples), len(self.ds))))
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
         if self.tokenizer.pad_token_id is None:
             # fallback for GPT-like tokenizers
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.seq_len = seq_len
+        self.text_field = text_field
 
     def __len__(self) -> int:
         return len(self.ds)
 
     def __getitem__(self, idx: int) -> TaskBatch:
         ex = self.ds[int(idx)]
-        text = ex.get("text")
+        text = ex.get(self.text_field) if self.text_field else None
         if text is None:
-            # try common alternatives
-            text = ex.get("content") or ex.get("sentence") or ex.get("review") or ""
+            text = ex.get("text")
+            if text is None:
+                # try common alternatives
+                text = ex.get("content") or ex.get("sentence") or ex.get("review") or ""
         enc = self.tokenizer(
             text,
             truncation=True,
@@ -46,10 +63,14 @@ class _TextLMDataset(Dataset[TaskBatch]):
 @dataclass(frozen=True)
 class TextLMTaskConfig:
     dataset_name: str
+    dataset_config: str | None = None
     split_train: str = "train"
     split_val: str | None = None
     tokenizer: str = "distilbert-base-uncased"
     seq_len: int = 256
+    text_field: str | None = None
+    max_train_samples: int | None = None
+    max_val_samples: int | None = None
 
 
 class TextLMTask:
@@ -61,16 +82,22 @@ class TextLMTask:
     def build_dataloaders(self, batch_size: int) -> tuple[DataLoader, DataLoader | None]:
         train_ds = _TextLMDataset(
             dataset_name=self.cfg.dataset_name,
+            dataset_config=self.cfg.dataset_config,
             split=self.cfg.split_train,
             tokenizer_name=self.cfg.tokenizer,
             seq_len=self.cfg.seq_len,
+            text_field=self.cfg.text_field,
+            max_samples=self.cfg.max_train_samples,
         )
         val_ds = (
             _TextLMDataset(
                 dataset_name=self.cfg.dataset_name,
+                dataset_config=self.cfg.dataset_config,
                 split=self.cfg.split_val,
                 tokenizer_name=self.cfg.tokenizer,
                 seq_len=self.cfg.seq_len,
+                text_field=self.cfg.text_field,
+                max_samples=self.cfg.max_val_samples,
             )
             if self.cfg.split_val
             else None

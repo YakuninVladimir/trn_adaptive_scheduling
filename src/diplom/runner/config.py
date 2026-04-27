@@ -15,6 +15,10 @@ class TrainConfig:
     batch_size: int = 8
     lr: float = 1e-4
     weight_decay: float = 0.0
+    # Optimizer LR: linear warmup then optional cosine decay to lr * lr_min_ratio.
+    warmup_steps: int = 0
+    lr_schedule: str = "none"  # none|cosine (cosine applies after warmup)
+    lr_min_ratio: float = 0.1
     max_steps: int | None = None
     log_every: int = 10
     eval_every: int = 100
@@ -24,6 +28,18 @@ class TrainConfig:
     progress_bar: bool = True
     live_plots: bool = False
     live_plot_every: int = 100
+    # Dump per-batch tensors for offline oracle-head training (aux sequence + per-step CE, optional logits/state).
+    dump_oracle_trace: bool = False
+    dump_oracle_trace_dir: str | None = None  # relative to run_dir if not absolute; default run_dir/oracle_traces
+    dump_oracle_trace_every: int = 1  # every N global optimizer steps (1 = each batch)
+    dump_oracle_trace_shard_batches: int = 64  # pack this many batch records into one .pt (fewer files, faster to read)
+    dump_oracle_trace_max_batches: int | None = None  # stop recording after this many batches total (None = no limit)
+    dump_oracle_trace_include_logits: bool = True
+    dump_oracle_trace_include_state: bool = True  # TRM/HRM (y, z) latents per step
+    dump_oracle_trace_fp16: bool = True  # store float tensors on CPU as float16 where applicable
+    # CUDA only: autocast + GradScaler (fp16 or bf16). No effect on CPU.
+    amp: bool = False
+    amp_dtype: str = "float16"  # float16 | bfloat16 (bf16 if hardware supports it)
 
 
 @dataclass(frozen=True)

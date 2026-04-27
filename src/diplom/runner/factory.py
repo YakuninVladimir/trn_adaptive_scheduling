@@ -6,8 +6,10 @@ from typing import Any, TypeVar
 import torch
 
 from diplom.models.hrm import HRM, HRMConfig
+from diplom.models.text_correction import FrozenLLMTRM, FrozenLLMTRMConfig, LoRATextLM, LoRATextLMConfig
 from diplom.models.trm import TRM, TRMConfig
 from diplom.models.trm_oracle import TRMOracle, TRMOracleConfig
+from diplom.runner.tasks.arc_agi_task import ArcAgiTask, ArcAgiTaskConfig
 from diplom.runner.tasks.sudoku_task import SudokuTask, SudokuTaskConfig
 from diplom.runner.tasks.text_lm_task import TextLMTask, TextLMTaskConfig
 from diplom.runner.tasks.timeseries_task import TimeSeriesTask, TimeSeriesTaskConfig
@@ -27,6 +29,9 @@ def build_task(task_raw: dict[str, Any]):
     if name == "sudoku":
         cfg = SudokuTaskConfig(**_filter_kwargs(SudokuTaskConfig, task_raw))
         return SudokuTask(cfg)
+    if name in ("arc_agi", "arc-agi"):
+        cfg = ArcAgiTaskConfig(**_filter_kwargs(ArcAgiTaskConfig, task_raw))
+        return ArcAgiTask(cfg)
     if name in ("text_lm", "wikitext_lm"):
         # accept either dataset_name or name
         if "dataset_name" not in task_raw and "name" in task_raw:
@@ -56,6 +61,12 @@ def build_model(model_raw: dict[str, Any]) -> torch.nn.Module:
     if name in ("trm_oracle", "trm-lookahead"):
         cfg = TRMOracleConfig(**_filter_kwargs(TRMOracleConfig, model_raw))
         return TRMOracle(cfg)
+    if name in ("frozen_llm_trm", "trm_correction"):
+        cfg = FrozenLLMTRMConfig(**_filter_kwargs(FrozenLLMTRMConfig, model_raw))
+        return FrozenLLMTRM(cfg)
+    if name in ("lora_text_lm", "lora_ablation"):
+        cfg = LoRATextLMConfig(**_filter_kwargs(LoRATextLMConfig, model_raw))
+        return LoRATextLM(cfg)
     raise ValueError(f"Unknown model name: {name!r}")
 
 

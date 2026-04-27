@@ -161,8 +161,9 @@ class TRM(nn.Module):
 
         loss_parts: dict[str, torch.Tensor] = {}
         if self.halt_proj is not None:
-            q = torch.sigmoid(self.halt_proj(aux)).squeeze(-1)  # [B]
-            loss_parts["halt_prob"] = q
+            halt_logit = self.halt_proj(aux).squeeze(-1)  # [B]
+            loss_parts["halt_logit"] = halt_logit
+            loss_parts["halt_prob"] = torch.sigmoid(halt_logit)
 
         return ModelOutput(logits=logits, aux_tensor=aux, state=(y, z), loss_parts=loss_parts)
 

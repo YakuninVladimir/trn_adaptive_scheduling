@@ -1,0 +1,35 @@
+task:
+  name: wikitext_lm
+  dataset_name: wikitext
+  dataset_config: wikitext-103-raw-v1
+  split_train: train
+  split_val: validation
+  tokenizer: distilbert-base-uncased
+  text_field: text
+  seq_len: 256
+
+model:
+  name: trm
+  vocab_size: 30522
+  seq_len: 256
+  d_model: 256
+  n_heads: 8
+  n_layers: 2
+  d_ff: 1024
+  use_attention: true
+  H_cycles: 2
+  L_cycles: 4
+  N_sup: 8
+
+scheduler:
+  name: fixed
+  recursion_n: 4
+  recursion_T: 2
+
+train:
+  seed: 42
+  device: auto
+  epochs: 1
+  batch_size: 8
+  lr: 3.0e-4
+  run_dir: runs/text_wikitext103_trm_fixed

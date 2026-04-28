@@ -5,6 +5,7 @@ from pathlib import Path
 
 import torch
 
+from diplom.models.trm_oracle import oracle_history_tensor_from_output
 from diplom.runner.config import load_experiment_config
 from diplom.runner.factory import build_model, build_scheduler, build_task, resolve_device
 from diplom.runner.stopping import apply_stopping_strategy
@@ -103,7 +104,9 @@ def eval_stopping_from_yaml(
                         recursion_T=sch.recursion_T,
                     )
                 logits_hist.append(out.logits.detach())
-                aux_hist.append(out.aux_tensor.detach())
+                h_t = oracle_history_tensor_from_output(model, out)
+                if h_t is not None:
+                    aux_hist.append(h_t)
                 ce_hist.append(_per_sample_token_ce(out.logits.detach(), y, y_mask, y_weight))
                 prev_aux = out.aux_tensor
                 state = out.state

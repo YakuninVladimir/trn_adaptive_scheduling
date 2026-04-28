@@ -1,0 +1,47 @@
+task:
+  name: wikitext_lm
+  dataset_name: wikitext
+  dataset_config: wikitext-103-raw-v1
+  split_train: train
+  split_val: validation
+  tokenizer: distilbert-base-uncased
+  text_field: text
+  seq_len: 256
+model:
+  name: trm_oracle
+  vocab_size: 30522
+  seq_len: 256
+  d_model: 256
+  n_heads: 8
+  n_layers: 2
+  d_ff: 1024
+  use_attention: true
+  H_cycles: 2
+  L_cycles: 4
+  N_sup: 8
+  oracle_max_steps: 8
+  oracle_horizon: 8
+  oracle_n_heads: 4
+  oracle_n_layers: 2
+  oracle_d_ff: 512
+  oracle_distribution_lambda: 0.01
+  oracle_target_mode: distribution
+  oracle_distribution_model: hybrid
+  halt_head: false
+scheduler:
+  name: fixed
+  recursion_n: 4
+  recursion_T: 2
+train:
+  seed: 42
+  device: auto
+  epochs: 5
+  batch_size: 8
+  lr: 0.0003
+  live_plots: true
+  save_best_only: true
+  best_metric: auto
+  best_metric_mode: auto
+  run_dir: runs/oracle_sweep_wikitext/hybrid
+  live_plot_every: 10
+  use_halt_loss: false

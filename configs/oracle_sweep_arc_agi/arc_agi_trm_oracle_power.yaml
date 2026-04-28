@@ -1,0 +1,45 @@
+task:
+  name: arc_agi
+  train_path: data/arc_agi/train.jsonl
+  val_path: data/arc_agi/val.jsonl
+  max_height: 30
+  max_width: 30
+  max_color: 9
+model:
+  name: trm_oracle
+  vocab_size: 11
+  seq_len: 900
+  d_model: 256
+  n_heads: 8
+  n_layers: 2
+  d_ff: 1024
+  use_attention: true
+  H_cycles: 2
+  L_cycles: 4
+  N_sup: 8
+  oracle_max_steps: 8
+  oracle_horizon: 8
+  oracle_n_heads: 4
+  oracle_n_layers: 2
+  oracle_d_ff: 512
+  oracle_distribution_lambda: 0.01
+  oracle_target_mode: distribution
+  oracle_distribution_model: power
+  halt_head: false
+scheduler:
+  name: fixed
+  recursion_n: 4
+  recursion_T: 2
+train:
+  seed: 42
+  device: auto
+  epochs: 10
+  batch_size: 8
+  lr: 0.0003
+  live_plots: true
+  save_best_only: true
+  best_metric: auto
+  best_metric_mode: auto
+  run_dir: runs/oracle_sweep_arc_agi/power
+  live_plot_every: 10
+  use_halt_loss: false

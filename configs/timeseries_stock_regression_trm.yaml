@@ -30,5 +30,9 @@ train:
   epochs: 1
   batch_size: 32
   lr: 1.0e-3
+  live_plots: true
+  save_best_only: true
+  best_metric: auto
+  best_metric_mode: auto
   run_dir: runs/dev_timeseries_stock_trm
 

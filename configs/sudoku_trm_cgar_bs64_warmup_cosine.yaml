@@ -46,4 +46,8 @@ train:
   # CUDA mixed precision (runner: autocast + GradScaler)
   amp: true
   amp_dtype: bfloat16
+  live_plots: true
+  save_best_only: true
+  best_metric: auto
+  best_metric_mode: auto
   run_dir: runs/dev_trm_cgar_sudoku

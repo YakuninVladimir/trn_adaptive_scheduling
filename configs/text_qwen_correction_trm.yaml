@@ -4,14 +4,14 @@ task:
   dataset_config: wikitext-103-raw-v1
   split_train: train
   split_val: validation
-  tokenizer: Qwen/Qwen2.5-0.5B
+  tokenizer: tiiuae/Falcon-H1-Tiny-90M-Base
   text_field: text
   seq_len: 256
 
 model:
   name: trm_correction
-  base_model_name: Qwen/Qwen2.5-0.5B
-  vocab_size: 151936
+  base_model_name: tiiuae/Falcon-H1-Tiny-90M-Base
+  vocab_size: 32768
   seq_len: 256
   d_model: 256
   n_heads: 8
@@ -36,4 +36,8 @@ train:
   epochs: 1
   batch_size: 2
   lr: 1.0e-4
-  run_dir: runs/text_qwen_correction_trm
+  live_plots: true
+  save_best_only: true
+  best_metric: auto
+  best_metric_mode: auto
+  run_dir: runs/text_falcon90m_correction_trm

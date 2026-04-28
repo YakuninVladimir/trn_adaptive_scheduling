@@ -42,4 +42,8 @@ train:
   eval_every: 500
   ckpt_every: 1000
   progress_bar: true
+  live_plots: true
+  save_best_only: true
+  best_metric: auto
+  best_metric_mode: auto
   run_dir: runs/trm_1h

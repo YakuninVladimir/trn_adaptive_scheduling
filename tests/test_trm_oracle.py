@@ -31,9 +31,9 @@ def test_trm_oracle_head_shapes_and_loss():
     for _ in range(4):
         out = m(x, state=state, recursion_n=1, recursion_T=1)
         state = tuple(s.detach() for s in out.state)
-        aux_hist.append(out.aux_tensor.detach())
+        aux_hist.append(out.state[0].detach())
 
-    aux = torch.stack(aux_hist, dim=1)  # [B, T, D]
+    aux = torch.stack(aux_hist, dim=1)  # [B, T, L, D]
     logits = m.oracle_logits(aux)
     assert logits.shape == (3, 4)
 
@@ -48,7 +48,7 @@ def test_trm_oracle_head_shapes_and_loss():
     assert float(rollout_loss.item()) >= 0.0
 
     # Current-step-inclusive target (delta=0 allowed): T=1 should still produce valid loss.
-    aux_one = aux[:, :1, :]
+    aux_one = aux[:, :1]
     per_step_one = torch.rand(1, 3)
     rollout_loss_one = m.oracle_loss_from_rollout(aux_one, per_step_one)
     assert rollout_loss_one.dim() == 0

@@ -10,7 +10,8 @@ def test_stopping_rules_smoke():
     assert stopping_rule_decision("cumulative_probability", pmf, 3, threshold=0.5)
     assert stopping_rule_decision("future_improvement", pmf, 4, threshold=0.01)
     assert stopping_rule_decision("hazard", pmf, 4, threshold=0.5)
-    assert stopping_rule_decision("quantile", pmf, 3, threshold=0.7)
+    # alpha=0.7 => smallest j with CDF>=0.7 is j=4; need k>=4 for stop decision q<=kk
+    assert stopping_rule_decision("quantile", pmf, 4, threshold=0.7)
 
 
 def test_apply_stopping_strategy_returns_valid_step():

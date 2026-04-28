@@ -44,7 +44,7 @@ def test_save_oracle_trace_roundtrip_matches_oracle_loss(tmp_path: Path) -> None
     for _ in range(4):
         out = m(x, state=state, recursion_n=1, recursion_T=1)
         state = tuple(s.detach() for s in out.state)
-        aux_hist.append(out.aux_tensor.detach())
+        aux_hist.append(out.state[0].detach())
         per_step.append(torch.rand(3))
         logits_hist.append(out.logits.detach())
         sy.append(out.state[0].detach())
@@ -88,7 +88,11 @@ def test_save_oracle_trace_roundtrip_matches_oracle_loss(tmp_path: Path) -> None
     )
 
     blob = torch.load(path, map_location="cpu", weights_only=False)
-    aux_btd = blob["aux_seq"].permute(1, 0, 2)
+    aux_seq = blob["aux_seq"]
+    if aux_seq.dim() == 4:
+        aux_btd = aux_seq.permute(1, 0, 2, 3)
+    else:
+        aux_btd = aux_seq.permute(1, 0, 2)
     ce_tb = blob["per_sample_ce"]
     loss_disk = m.oracle_loss_from_rollout(aux_btd, ce_tb)
     loss_direct = m.oracle_loss_from_rollout(torch.stack(aux_hist, dim=1), torch.stack(per_step, dim=0))

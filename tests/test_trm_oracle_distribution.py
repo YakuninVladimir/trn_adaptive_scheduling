@@ -22,6 +22,7 @@ def test_distribution_models_return_normalized_pmf():
         oracle_n_heads=2,
         oracle_n_layers=1,
         oracle_d_ff=64,
+        oracle_use_full_y=False,
     )
     m = TRMOracle(cfg)
     aux = torch.randn(2, 3, 32)

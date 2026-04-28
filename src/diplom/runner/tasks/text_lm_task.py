@@ -20,12 +20,19 @@ class _TextLMDataset(Dataset[TaskBatch]):
         seq_len: int,
         dataset_config: str | None = None,
         text_field: str | None = None,
+        sample_fraction: float | None = None,
         max_samples: int | None = None,
     ) -> None:
         if dataset_config:
             self.ds = load_dataset(dataset_name, dataset_config, split=split)
         else:
             self.ds = load_dataset(dataset_name, split=split)
+        if sample_fraction is not None:
+            frac = float(sample_fraction)
+            if not (0.0 < frac <= 1.0):
+                raise ValueError(f"sample_fraction must be in (0, 1], got {sample_fraction}")
+            keep = max(1, int(len(self.ds) * frac))
+            self.ds = self.ds.select(range(keep))
         if max_samples is not None:
             self.ds = self.ds.select(range(min(int(max_samples), len(self.ds))))
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
@@ -69,6 +76,8 @@ class TextLMTaskConfig:
     tokenizer: str = "distilbert-base-uncased"
     seq_len: int = 256
     text_field: str | None = None
+    train_fraction: float | None = None
+    val_fraction: float | None = None
     max_train_samples: int | None = None
     max_val_samples: int | None = None
 
@@ -87,6 +96,7 @@ class TextLMTask:
             tokenizer_name=self.cfg.tokenizer,
             seq_len=self.cfg.seq_len,
             text_field=self.cfg.text_field,
+            sample_fraction=self.cfg.train_fraction,
             max_samples=self.cfg.max_train_samples,
         )
         val_ds = (
@@ -97,6 +107,7 @@ class TextLMTask:
                 tokenizer_name=self.cfg.tokenizer,
                 seq_len=self.cfg.seq_len,
                 text_field=self.cfg.text_field,
+                sample_fraction=self.cfg.val_fraction,
                 max_samples=self.cfg.max_val_samples,
             )
             if self.cfg.split_val
@@ -128,4 +139,9 @@ class TextLMTask:
         else:
             acc = correct.float().mean()
         return {"token_acc": float(acc.item())}
+
+    def halt_targets(self, logits: torch.Tensor, batch: TaskBatch) -> torch.Tensor | None:
+        _ = logits, batch
+        # Text LM task currently does not define a halting supervision signal.
+        return None
 

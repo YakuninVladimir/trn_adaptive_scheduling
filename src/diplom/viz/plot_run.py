@@ -134,7 +134,6 @@ def plot_run(
         main_loss = [r.get("main_loss") for r in train_rows]
         halt_loss = [r.get("halt_loss") for r in train_rows]
         oracle_loss = [r.get("oracle_loss") for r in train_rows]
-        used_sup = [r.get("used_sup") for r in train_rows]
 
         # 1) Main model loss (and optional total loss context).
         _plot_series_ema_band(
@@ -187,11 +186,9 @@ def plot_run(
                 enabled=ema_band,
             )
         if has_oracle_key:
-            ora_label = (
-                "train_oracle_loss"
-                if has_halt_key
-                else "train_aux_loss (legacy: halt was logged as oracle_loss)"
-            )
+            # In current training pipelines oracle_loss is the dedicated oracle head objective.
+            # Keep label stable regardless of halt_loss presence.
+            ora_label = "train_oracle_loss"
             ol = [0.0 if v is None else v for v in oracle_loss]
             _plot_series_ema_band(
                 axes[1],
@@ -208,56 +205,34 @@ def plot_run(
         axes[1].legend(loc="upper right")
         axes[1].grid(True, alpha=0.3)
 
-        # 3) used_sup only (skip EMA band if nearly constant).
-        us_arr = _to_float_array(used_sup)
-        flat_sup = bool(
-            ema_band
-            and np.any(np.isfinite(us_arr))
-            and float(np.nanmax(us_arr) - np.nanmin(us_arr)) < 1e-3
-        )
-        if flat_sup:
-            axes[2].plot(steps, used_sup, label="used_sup", color="tab:orange")
-        else:
-            _plot_series_ema_band(
-                axes[2],
-                steps,
-                used_sup,
-                color="tab:orange",
-                label="used_sup",
-                ema_alpha=ema_alpha,
-                std_window=std_window,
-                std_sigma=std_sigma,
-                enabled=ema_band,
-            )
-        axes[2].set_ylabel("used_sup")
+        # 3) Learning rate.
+        axes[2].set_ylabel("learning rate")
         lrs = [r.get("lr") for r in train_rows]
-        h2_left, lab2_left = axes[2].get_legend_handles_labels()
         if any(v is not None for v in lrs):
-            ax2r = axes[2].twinx()
-            ax2r.plot(
+            axes[2].plot(
                 steps,
                 [float(v) if v is not None else float("nan") for v in lrs],
                 color="tab:red",
-                alpha=0.55,
+                alpha=0.8,
                 label="lr",
             )
-            ax2r.set_ylabel("learning rate", color="tab:red")
-            ax2r.tick_params(axis="y", labelcolor="tab:red")
-            h2_right, lab2_right = ax2r.get_legend_handles_labels()
-            axes[2].legend(h2_left + h2_right, lab2_left + lab2_right, loc="upper right")
-        else:
-            axes[2].legend(loc="upper right")
+        axes[2].legend(loc="upper right")
         axes[2].grid(True, alpha=0.3)
 
     if has_val:
         val_ax = axes[3]
+        val_ax_r = val_ax.twinx()
         v_steps = [r["step"] for r in val_rows]
         keys = sorted({k for r in val_rows for k in r.keys()} - {"kind", "epoch", "step"})
         val_win = max(3, min(std_window, max(2, len(v_steps) // 3)))
+        loss_like_tokens = ("loss", "mae", "mse", "nll", "brier", "ece", "regret")
+        has_left = False
+        has_right = False
         for i, k in enumerate(keys):
             vals = [r.get(k) for r in val_rows]
+            target_ax = val_ax_r if any(tok in k.lower() for tok in loss_like_tokens) else val_ax
             _plot_series_ema_band(
-                val_ax,
+                target_ax,
                 v_steps,
                 vals,
                 color=f"C{i % 10}",
@@ -267,6 +242,10 @@ def plot_run(
                 std_sigma=std_sigma,
                 enabled=ema_band,
             )
+            if target_ax is val_ax_r:
+                has_right = True
+            else:
+                has_left = True
         # Overlay train accuracies for direct train-vs-val comparison.
         if train_rows:
             t_steps = [r["step"] for r in train_rows]
@@ -287,8 +266,17 @@ def plot_run(
                     std_sigma=std_sigma,
                     enabled=ema_band,
                 )
-        val_ax.legend(loc="upper left")
-        val_ax.set_ylabel("val metrics")
+                has_left = True
+        h_left, l_left = val_ax.get_legend_handles_labels()
+        h_right, l_right = val_ax_r.get_legend_handles_labels()
+        if h_left or h_right:
+            val_ax.legend(h_left + h_right, l_left + l_right, loc="upper left")
+        val_ax.set_ylabel("val/train acc-like")
+        if has_right:
+            val_ax_r.set_ylabel("val loss-like")
+        else:
+            val_ax_r.set_ylabel("")
+            val_ax_r.set_yticks([])
         val_ax.grid(True, alpha=0.3)
 
     axes[-1].set_xlabel("global step")

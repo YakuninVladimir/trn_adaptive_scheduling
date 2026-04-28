@@ -16,6 +16,7 @@ uv run <команда> [аргументы]
 |---------|-----------|------------|
 | `uv sync --extra dev` | `--extra dev` — установить dev-группу (`pytest`, `ruff`) | Создать/обновить окружение и поставить зависимости проекта. |
 | `uv lock` | нет | Пересобрать `uv.lock` по текущему `pyproject.toml`. |
+| `uv add mamba-ssm causal-conv1d` | `mamba-ssm`, `causal-conv1d` — пакеты fast-path для Falcon | Установить зависимости для ускоренного выполнения Falcon (без fallback на naive путь). |
 | `uv run pytest` | путь/модуль опционально | Запуск тестов в окружении проекта. |
 | `uv run ruff check src tests` | пути проверки | Запуск линтера. |
 
@@ -31,6 +32,7 @@ uv run <команда> [аргументы]
 |------------|------------|
 | `sudoku` | Sudoku-Extreme (Hugging Face) |
 | `text` | Текстовые датасеты через Hugging Face `datasets` |
+| `arc-agi` | ARC-AGI через Hugging Face `datasets` c экспортом `train.jsonl`/`val.jsonl` |
 | `timeseries-stocks` | Цены бумаг через `yfinance` |
 | `timeseries-public` | Временные ряды из Hugging Face |
 | `timeseries-synth` | Синтетический ряд (синус) для smoke-тестов |
@@ -62,6 +64,24 @@ uv run <команда> [аргументы]
 | `--dry-run` | bool | `true` | План без записи; для записи: `--dry-run=false`. |
 | `--materialize` | флаг | выкл. | Записать данные на диск. |
 | `--out-dir` | str | `data/text` | Каталог вывода. |
+
+---
+
+### `diplom-data arc-agi`
+
+Подготовка ARC-AGI в формат, который ожидает `task.name: arc_agi` (`train.jsonl` + `val.jsonl`).
+
+| Флаг | Тип | По умолчанию | Описание |
+|------|-----|--------------|----------|
+| `--name` | str | `lordspline/arc-agi` | Имя датасета в Hugging Face. |
+| `--dataset-config` | str, опц. | — | Конфигурация/поднабор HF датасета. |
+| `--split-train` | str | `training` | Сплит, экспортируемый в train jsonl. |
+| `--split-val` | str | `evaluation` | Сплит, экспортируемый в val jsonl. |
+| `--train-filename` | str | `train.jsonl` | Имя train-файла в `out-dir`. |
+| `--val-filename` | str | `val.jsonl` | Имя val-файла в `out-dir`. |
+| `--dry-run` | bool | `true` | План без записи; для записи: `--dry-run=false`. |
+| `--materialize` | флаг | выкл. | Реально скачать и сохранить jsonl. |
+| `--out-dir` | str | `data/arc_agi` | Каталог вывода. |
 
 ---
 
@@ -108,7 +128,7 @@ uv run <команда> [аргументы]
 | Флаг | Тип | По умолчанию | Описание |
 |------|-----|--------------|----------|
 | `--config` | str | **обязателен** | Путь к файлу конфигурации (например `configs/sudoku_trm_cgar.yaml`). |
-| `--live-plots` | флаг | выкл. | Периодически обновлять `{run_dir}/plots.png` во время обучения. |
+| `--live-plots` | флаг | выкл. | Явно включить периодическое обновление `{run_dir}/plots.png` во время обучения (обычно уже включено через `train.live_plots`). |
 | `--live-plot-every` | int, опц. | — | Интервал в глобальных шагах между обновлениями графика; если задан, переопределяет `train.live_plot_every` из YAML. |
 
 Остальные гиперпараметры задаются в YAML: секции `task`, `model`, `scheduler`, `train`. Поля секции `train` соответствуют `TrainConfig` в `src/diplom/runner/config.py`:
@@ -127,11 +147,15 @@ uv run <команда> [аргументы]
 | `max_steps` | Остановка по числу глобальных шагов (опционально). |
 | `log_every` | Частота логирования в `metrics.jsonl`. |
 | `eval_every` | Частота валидации. |
-| `ckpt_every` | Частота сохранения чекпоинтов в `{run_dir}/checkpoints/`. |
+| `ckpt_every` | Частота сохранения чекпоинтов в `{run_dir}/checkpoints/` (используется, когда `save_best_only: false`). |
+| `save_best_only` | Если `true`, сохраняется только `checkpoints/best.pt` при улучшении выбранной метрики. |
+| `best_metric` | Метрика для выбора лучшего чекпоинта: `auto`, `val_loss`, `train_loss` или имя метрики. |
+| `best_metric_mode` | Режим оптимизации метрики: `auto`, `min`, `max`. |
 | `run_dir` | Каталог прогона (метрики, графики, чекпоинты). |
 | `beta_halt` | Вес BCE для halting head (если включён). |
+| `use_halt_loss` | Включать ли расчёт/логирование halt-loss (BCE). Для текущих oracle sweep поставлено `false`. |
 | `progress_bar` | Включить tqdm. |
-| `live_plots` | Live-графики без CLI-флага (альтернатива `--live-plots`). |
+| `live_plots` | Live-графики без CLI-флага (по умолчанию включены). |
 | `live_plot_every` | Интервал шагов для live-графиков (если не переопределён CLI). |
 | `dump_oracle_trace` | Сохранять трассы для оффлайн-обучения оракула: `aux_seq` [T,B,D], `per_sample_ce` [T,B], `x_tokens`, `y`, маски/веса, расписание по шагам, опционально логиты и латенты (y,z). Файлы — **шарды** `oracle_trace_shard_00000.pt` (см. `dump_oracle_trace_shard_batches`). |
 | `dump_oracle_trace_dir` | Подкаталог или абсолютный путь; по умолчанию `oracle_traces` внутри `run_dir`. |
@@ -153,6 +177,97 @@ uv run <команда> [аргументы]
 | `difficulty_power` | `1.0` | Степень для веса: вес ∝ `candidate_count ** power`, затем нормировка к среднему 1 по дыркам. |
 
 `token_acc` считается по тем же пустым клеткам; `exact_acc` — полное совпадение сетки 81 ячейка с решением.
+
+---
+
+### Готовые конфиги sweep по oracle-аппроксимациям (WikiText-103)
+
+Все конфиги лежат в `configs/oracle_sweep_wikitext/` и отличаются только `model.oracle_target_mode`/`model.oracle_distribution_model`.
+Во всех sweep-конфигах выставлено: `train.epochs: 5`, `train.live_plots: true`, `train.live_plot_every: 10`.
+
+| Конфиг | Что обучается |
+|--------|----------------|
+| `text_wikitext103_trm_oracle_delta.yaml` | Legacy delta-oracle (`oracle_target_mode: delta`) |
+| `text_wikitext103_trm_oracle_finite_discrete.yaml` | Distribution oracle: finite discrete |
+| `text_wikitext103_trm_oracle_smoothed_loss.yaml` | Distribution oracle: smoothed target |
+| `text_wikitext103_trm_oracle_mixture_geometric.yaml` | Distribution oracle: mixture geometric |
+| `text_wikitext103_trm_oracle_mixture_exponential.yaml` | Distribution oracle: mixture exponential |
+| `text_wikitext103_trm_oracle_power.yaml` | Distribution oracle: power-law tail |
+| `text_wikitext103_trm_oracle_negative_binomial.yaml` | Distribution oracle: negative binomial |
+| `text_wikitext103_trm_oracle_lognormal.yaml` | Distribution oracle: discretized lognormal |
+| `text_wikitext103_trm_oracle_hybrid.yaml` | Distribution oracle: hybrid finite+tail |
+
+Команды запуска:
+
+```bash
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_delta.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_finite_discrete.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_smoothed_loss.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_mixture_geometric.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_mixture_exponential.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_power.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_negative_binomial.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_lognormal.yaml
+uv run diplom-train --config configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_hybrid.yaml
+```
+
+---
+
+### Готовые конфиги sweep по oracle-аппроксимациям (ARC-AGI)
+
+Все конфиги лежат в `configs/oracle_sweep_arc_agi/` и отличаются только `model.oracle_target_mode`/`model.oracle_distribution_model`.
+Во всех sweep-конфигах выставлено: `train.epochs: 10`, `train.live_plots: true`, `train.live_plot_every: 10`.
+
+| Конфиг | Что обучается |
+|--------|----------------|
+| `arc_agi_trm_oracle_delta.yaml` | Legacy delta-oracle (`oracle_target_mode: delta`) |
+| `arc_agi_trm_oracle_finite_discrete.yaml` | Distribution oracle: finite discrete |
+| `arc_agi_trm_oracle_smoothed_loss.yaml` | Distribution oracle: smoothed target |
+| `arc_agi_trm_oracle_mixture_geometric.yaml` | Distribution oracle: mixture geometric |
+| `arc_agi_trm_oracle_mixture_exponential.yaml` | Distribution oracle: mixture exponential |
+| `arc_agi_trm_oracle_power.yaml` | Distribution oracle: power-law tail |
+| `arc_agi_trm_oracle_negative_binomial.yaml` | Distribution oracle: negative binomial |
+| `arc_agi_trm_oracle_lognormal.yaml` | Distribution oracle: discretized lognormal |
+| `arc_agi_trm_oracle_hybrid.yaml` | Distribution oracle: hybrid finite+tail |
+
+Команды запуска:
+
+```bash
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_delta.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_finite_discrete.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_smoothed_loss.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_mixture_geometric.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_mixture_exponential.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_power.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_negative_binomial.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_lognormal.yaml
+uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_hybrid.yaml
+```
+
+---
+
+### Скрипт запуска sweep целиком
+
+Файл: `scripts/run_oracle_sweep.sh`
+
+| Аргумент | По умолчанию | Описание |
+|----------|--------------|----------|
+| `group` | `all` | Какие наборы запускать: `wikitext`, `arc`, `all`. |
+| `--dry-run` | выкл. | Показать команды, не запускать обучение. |
+| `--continue-on-error` | выкл. | Продолжать sweep, даже если один конфиг упал. |
+
+Примеры:
+
+```bash
+# Показать весь план запусков
+./scripts/run_oracle_sweep.sh all --dry-run
+
+# Запустить только ARC-AGI sweep
+./scripts/run_oracle_sweep.sh arc
+
+# Запустить всё и не останавливаться на первой ошибке
+./scripts/run_oracle_sweep.sh all --continue-on-error
+```
 
 ---
 
@@ -221,7 +336,7 @@ uv run <команда> [аргументы]
 | `--std-window` | int | `25` | Окно для оценки локального std вокруг каждой точки. |
 | `--std-sigma` | float | `1.0` | Полуширина заливки: `EMA ± std_sigma * rolling_std`. |
 
-На графиках по умолчанию: полупрозрачный **сырой** ряд, поверх — **EMA**, полупрозрачная зона **±σ** (скользящее стандартное отклонение сырого ряда). Для почти константного `used_sup` полоса не рисуется. Кривая `lr` на twinx без EMA.
+На графиках по умолчанию: полупрозрачный **сырой** ряд, поверх — **EMA**, полупрозрачная зона **±σ** (скользящее стандартное отклонение сырого ряда). В train-панелях отображаются лоссы и `lr`; `used_sup` отдельно не рисуется.
 
 ---
 
@@ -244,6 +359,9 @@ uv run diplom-plot --run-dir runs/dev_trm_cgar_sudoku
 
 # WikiText-103 materialization
 uv run diplom-data text --name wikitext --dataset-config wikitext-103-raw-v1 --split train --dry-run false --materialize
+
+# ARC-AGI materialization (готовит data/arc_agi/train.jsonl и data/arc_agi/val.jsonl)
+uv run diplom-data arc-agi --name lordspline/arc-agi --split-train training --split-val evaluation --dry-run false --materialize
 
 # TRM + Oracle на ARC-AGI
 uv run diplom-train --config configs/arc_agi_trm_oracle.yaml

@@ -1,11 +1,12 @@
 """
 Save per-batch tensors needed to reproduce / train the TRMOracle head offline.
 
-Oracle forward uses prefix sequences of `aux_tensor` (pooled TRM field `y`):
-  `oracle_logits(aux_history)` with `aux_history` shape [B, T, d_model].
+Oracle forward uses prefix sequences per supervision step: either full ``y``
+``[B, L, d_model]`` (default ``oracle_use_full_y``) or mean-pooled ``aux_tensor``
+``[B, d_model]``. Stacked history is ``[B, T, L, D]`` or ``[B, T, D]``.
 
-Training uses `oracle_loss_from_rollout(aux_history_full, per_step_psloss)` with
-  `aux_history_full` [B, T, D], `per_step_psloss` [T, B] (weighted per-sample CE).
+Training uses ``oracle_loss_from_rollout(aux_history_full, per_step_psloss)`` with
+``per_step_psloss`` ``[T, B]`` (weighted per-sample CE).
 
 Storage:
   - schema_version 1: one batch per file (legacy), or single-batch dict shape.
@@ -19,13 +20,12 @@ from typing import Any
 
 import torch
 
-
 SCHEMA_VERSION_BATCH = 1
 SCHEMA_VERSION_SHARD = 2
 
 NOTES_ORACLE_LAYOUT = (
-    "aux_seq is [T,B,D]. For model.oracle_loss_from_rollout use "
-    "aux_seq.permute(1, 0, 2) -> [B,T,D]."
+    "aux_seq is [T,B,D] (mean_y) or [T,B,L,D] (full_y). For oracle_loss_from_rollout use "
+    "permute(1,0,2) or permute(1,0,2,3) to get [B,T,...]."
 )
 
 
@@ -75,7 +75,17 @@ def build_oracle_trace_batch_payload(
             f"schedule_rows ({len(schedule_rows)}) and aux_hist ({len(aux_hist)}) length mismatch"
         )
 
-    aux_seq = torch.stack([_fcpu(t, fp16) for t in aux_hist], dim=0)  # [T, B, D]
+    el0 = aux_hist[0]
+    if el0.dim() == 2:
+        aux_seq = torch.stack([_fcpu(t, fp16) for t in aux_hist], dim=0)  # [T, B, D]
+        layout = "mean_y"
+        d_aux = int(aux_seq.shape[2])
+    elif el0.dim() == 3:
+        aux_seq = torch.stack([_fcpu(t, fp16) for t in aux_hist], dim=0)  # [T, B, L, D]
+        layout = "full_y"
+        d_aux = int(aux_seq.shape[3])
+    else:
+        raise ValueError(f"aux_hist step tensor must be [B,D] or [B,L,D], got dim {el0.dim()}")
     ps_ce = torch.stack([_fcpu(t, fp16) for t in per_step_psloss], dim=0)  # [T, B]
 
     payload: dict[str, Any] = {
@@ -87,7 +97,9 @@ def build_oracle_trace_batch_payload(
         "used_supervision_steps": int(used_sup),
         "T": int(aux_seq.shape[0]),
         "B": int(aux_seq.shape[1]),
-        "d_aux": int(aux_seq.shape[2]),
+        "oracle_history_layout": layout,
+        "d_aux": d_aux,
+        **({"L_aux": int(aux_seq.shape[2])} if layout == "full_y" else {}),
         "aux_seq": aux_seq,
         "per_sample_ce": ps_ce,
         "x_tokens": x_tokens.detach().cpu(),

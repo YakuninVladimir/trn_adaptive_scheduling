@@ -28,13 +28,79 @@ class TRMOracleConfig(TRMConfig):
     oracle_distribution_lambda: float = 0.0
     oracle_distribution_beta: float = 0.5
     oracle_distribution_epsilon: float = 1e-6
+    # When True, oracle conditions on full y [B, L, d_model] each step (spatial self-attn then mean pool).
+    # When False, each step is mean-pooled y [B, d_model] (legacy).
+    oracle_use_full_y: bool = True
+    oracle_spatial_n_layers: int = 1
+    oracle_spatial_n_heads: int | None = None  # None -> oracle_n_heads
+    oracle_spatial_d_ff: int | None = None  # None -> oracle_d_ff
+
+
+def oracle_history_tensor_from_output(model: nn.Module, out: ModelOutput) -> torch.Tensor | None:
+    """
+    Tensor fed into TRMOracle heads for one supervision step.
+
+    If ``oracle_use_full_y`` (default), uses full latent ``y`` [B, L, D] from ``out.state``.
+    Otherwise uses ``out.aux_tensor`` (mean over positions), shape [B, D].
+    """
+    oc = getattr(model, "cfg_oracle", None)
+    if oc is None:
+        if out.aux_tensor is not None:
+            return out.aux_tensor.detach()
+        return None
+    use_full = bool(getattr(oc, "oracle_use_full_y", True))
+    if use_full:
+        st = out.state
+        if isinstance(st, tuple) and len(st) >= 1:
+            y0 = st[0]
+            if isinstance(y0, torch.Tensor) and y0.dim() == 3:
+                return y0.detach()
+    if out.aux_tensor is not None:
+        return out.aux_tensor.detach()
+    return None
+
+
+class _OracleSpatialEncoder(nn.Module):
+    """Maps full sequence y [B, L, D] -> one vector [B, D] (self-attention over L, then mean pool)."""
+
+    def __init__(
+        self,
+        seq_len: int,
+        d_model: int,
+        n_heads: int,
+        n_layers: int,
+        d_ff: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        self.seq_len = seq_len
+        self.pos = LearnedPositionalEmbedding(seq_len, d_model)
+        self.blocks = nn.ModuleList(
+            [
+                TransformerBlock(
+                    d_model=d_model,
+                    n_heads=n_heads,
+                    d_ff=d_ff,
+                    dropout=dropout,
+                    norm="rmsnorm",
+                )
+                for _ in range(n_layers)
+            ]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [N, L, D]
+        x = self.pos(x)
+        for blk in self.blocks:
+            x = blk(x)
+        return x.mean(dim=1)
 
 
 class _OracleLookaheadHead(nn.Module):
     """
     Predicts distribution over which delta step is optimal.
 
-    Input: aux history tensor [B, T, D]
+    Input: either [B, T, D] (mean-y per step) or [B, T, L, D] (full y per step when spatial encoder set).
     Output: logits over deltas [B, H], where index 0 means "stop now".
     """
 
@@ -47,10 +113,31 @@ class _OracleLookaheadHead(nn.Module):
         n_layers: int,
         d_ff: int,
         dropout: float,
+        *,
+        seq_len: int,
+        use_full_y: bool,
+        spatial_n_layers: int,
+        spatial_n_heads: int,
+        spatial_d_ff: int,
     ) -> None:
         super().__init__()
         self.history_max_steps = history_max_steps
         self.horizon = horizon
+        self.d_model = d_model
+        self.use_full_y = use_full_y
+        self.seq_len = seq_len
+        self.spatial: _OracleSpatialEncoder | None
+        if use_full_y:
+            self.spatial = _OracleSpatialEncoder(
+                seq_len=seq_len,
+                d_model=d_model,
+                n_heads=spatial_n_heads,
+                n_layers=max(int(spatial_n_layers), 1),
+                d_ff=spatial_d_ff,
+                dropout=dropout,
+            )
+        else:
+            self.spatial = None
         self.pos = LearnedPositionalEmbedding(history_max_steps, d_model)
         self.blocks = nn.ModuleList(
             [
@@ -71,15 +158,32 @@ class _OracleLookaheadHead(nn.Module):
             nn.Linear(d_ff, horizon),
         )
 
-    def encode(self, aux_history: torch.Tensor) -> torch.Tensor:
-        B, T, D = aux_history.shape
-        if T > self.history_max_steps:
-            raise ValueError(f"aux_history length {T} exceeds oracle_max_steps={self.history_max_steps}")
-        if T < self.history_max_steps:
-            pad = torch.zeros(B, self.history_max_steps - T, D, device=aux_history.device, dtype=aux_history.dtype)
-            x = torch.cat([aux_history, pad], dim=1)
+    def encode(self, history: torch.Tensor) -> torch.Tensor:
+        if self.use_full_y:
+            if history.dim() != 4:
+                raise ValueError(
+                    f"oracle_use_full_y expects history [B,T,L,D], got shape {tuple(history.shape)}"
+                )
+            B, T, L, D = history.shape
+            if L != self.seq_len:
+                raise ValueError(f"oracle history L={L} != model seq_len={self.seq_len}")
+            if D != self.d_model:
+                raise ValueError(f"oracle history D={D} != d_model={self.d_model}")
+            assert self.spatial is not None
+            x = history.reshape(B * T, L, D)
+            x = self.spatial(x).view(B, T, D)
         else:
-            x = aux_history
+            if history.dim() != 3:
+                raise ValueError(
+                    f"legacy oracle expects history [B,T,D], got shape {tuple(history.shape)}"
+                )
+            x = history
+        B, T, D = x.shape
+        if T > self.history_max_steps:
+            raise ValueError(f"history length {T} exceeds oracle_max_steps={self.history_max_steps}")
+        if T < self.history_max_steps:
+            pad = torch.zeros(B, self.history_max_steps - T, D, device=x.device, dtype=x.dtype)
+            x = torch.cat([x, pad], dim=1)
         x = self.pos(x)
         for blk in self.blocks:
             x = blk(x)
@@ -88,8 +192,8 @@ class _OracleLookaheadHead(nn.Module):
         pooled = torch.einsum("bt,btd->bd", attn, x)
         return pooled
 
-    def forward(self, aux_history: torch.Tensor) -> torch.Tensor:
-        pooled = self.encode(aux_history)
+    def forward(self, history: torch.Tensor) -> torch.Tensor:
+        pooled = self.encode(history)
         logits = self.mlp(pooled)
         return logits  # [B, horizon]
 
@@ -109,6 +213,9 @@ class TRMOracle(TRM):
     def __init__(self, cfg: TRMOracleConfig) -> None:
         super().__init__(cfg)
         self.cfg_oracle = cfg
+        use_fy = bool(cfg.oracle_use_full_y)
+        s_heads = cfg.oracle_spatial_n_heads if cfg.oracle_spatial_n_heads is not None else cfg.oracle_n_heads
+        s_ff = cfg.oracle_spatial_d_ff if cfg.oracle_spatial_d_ff is not None else cfg.oracle_d_ff
         self.oracle_head = _OracleLookaheadHead(
             d_model=cfg.d_model,
             history_max_steps=cfg.oracle_max_steps,
@@ -117,6 +224,11 @@ class TRMOracle(TRM):
             n_layers=cfg.oracle_n_layers,
             d_ff=cfg.oracle_d_ff,
             dropout=cfg.oracle_dropout,
+            seq_len=cfg.seq_len,
+            use_full_y=use_fy,
+            spatial_n_layers=cfg.oracle_spatial_n_layers,
+            spatial_n_heads=s_heads,
+            spatial_d_ff=s_ff,
         )
         horizon = int(cfg.oracle_horizon)
         m = int(max(cfg.oracle_distribution_components, 1))
@@ -132,8 +244,7 @@ class TRMOracle(TRM):
         self.dist_hybrid_alpha = nn.Linear(d, 1)
 
     def oracle_parameters(self):
-        for p in self.oracle_head.parameters():
-            yield p
+        yield from self.oracle_head.parameters()
         for name in (
             "dist_finite",
             "dist_mix_geom_pi",
@@ -149,7 +260,7 @@ class TRMOracle(TRM):
             yield from mod.parameters()
 
     def backbone_parameters(self):
-        oracle_ids = {id(p) for p in self.oracle_head.parameters()}
+        oracle_ids = {id(p) for p in self.oracle_parameters()}
         for p in self.parameters():
             if id(p) not in oracle_ids:
                 yield p
@@ -297,7 +408,7 @@ class TRMOracle(TRM):
         """
         Train oracle on prefix -> best future delta mapping.
 
-        aux_history_full: [B, T, D]
+        aux_history_full: [B, T, D] or [B, T, L, D] when oracle_use_full_y.
         per_step_psloss:  [T, B] (lower is better)
         """
         mode = (self.cfg_oracle.oracle_target_mode or "delta").lower()
@@ -306,14 +417,18 @@ class TRMOracle(TRM):
         return self.oracle_distribution_loss_from_rollout(aux_history_full, per_step_psloss)
 
     def _oracle_delta_loss_from_rollout(self, aux_history_full: torch.Tensor, per_step_psloss: torch.Tensor) -> torch.Tensor:
-        B, T, _ = aux_history_full.shape
+        if aux_history_full.dim() not in (3, 4):
+            raise ValueError(
+                f"oracle history must be [B,T,D] or [B,T,L,D], got {tuple(aux_history_full.shape)}"
+            )
+        T = aux_history_full.shape[1]
         H = int(self.cfg_oracle.oracle_horizon)
         losses: list[torch.Tensor] = []
         for s in range(T):
             valid_h = min(H, T - s)
             if valid_h <= 0:
                 continue
-            prefix = aux_history_full[:, : s + 1, :]
+            prefix = aux_history_full[:, : s + 1]
             future = per_step_psloss[s : s + valid_h, :]
             target_delta_idx = torch.argmin(future, dim=0)
             losses.append(self.oracle_loss(prefix, target_delta_idx, valid_horizon=valid_h))
@@ -322,7 +437,11 @@ class TRMOracle(TRM):
         return torch.stack(losses).mean()
 
     def oracle_distribution_loss_from_rollout(self, aux_history_full: torch.Tensor, per_step_psloss: torch.Tensor) -> torch.Tensor:
-        B, T, _ = aux_history_full.shape
+        if aux_history_full.dim() not in (3, 4):
+            raise ValueError(
+                f"oracle history must be [B,T,D] or [B,T,L,D], got {tuple(aux_history_full.shape)}"
+            )
+        B, T = aux_history_full.shape[0], aux_history_full.shape[1]
         H = min(int(self.cfg_oracle.oracle_horizon), T)
         device = aux_history_full.device
         losses: list[torch.Tensor] = []
@@ -332,7 +451,7 @@ class TRMOracle(TRM):
         beta = max(float(self.cfg_oracle.oracle_distribution_beta), 1e-6)
         dist_model = (self.cfg_oracle.oracle_distribution_model or "finite_discrete").lower()
         for s in range(T):
-            prefix = aux_history_full[:, : s + 1, :]
+            prefix = aux_history_full[:, : s + 1]
             target = torch.zeros(B, H, device=device, dtype=per_step_psloss.dtype)
             if dist_model in ("smoothed_loss", "smoothed"):
                 smoothed = torch.softmax(-costs[:H, :].transpose(0, 1) / beta, dim=-1)
@@ -340,8 +459,10 @@ class TRMOracle(TRM):
             else:
                 clamped = best_idx.clamp_max(H - 1)
                 target.scatter_(1, clamped[:, None], 1.0)
-            l = self.oracle_distribution_loss(prefix, target, valid_horizon=H, distribution_model=dist_model)
-            losses.append(l)
+            dist_loss = self.oracle_distribution_loss(
+                prefix, target, valid_horizon=H, distribution_model=dist_model
+            )
+            losses.append(dist_loss)
         if not losses:
             return torch.zeros((), device=device)
         return torch.stack(losses).mean()

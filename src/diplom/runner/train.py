@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
 
+from diplom.models.trm_oracle import oracle_history_tensor_from_output
 from diplom.runner.config import load_experiment_config
 from diplom.runner.factory import build_model, build_scheduler, build_task, resolve_device
 from diplom.runner.oracle_trace import build_oracle_trace_batch_payload, save_oracle_trace_shard
@@ -70,6 +71,33 @@ def _apply_lr_multiplier(
 ) -> None:
     for i, pg in enumerate(opt.param_groups):
         pg["lr"] = float(base_lrs[i]) * mult
+
+
+def _pick_best_metric_name(train_cfg, has_val: bool, val_metrics: dict[str, float] | None) -> str:
+    raw = str(getattr(train_cfg, "best_metric", "auto") or "auto").strip().lower()
+    if raw != "auto":
+        return raw
+    if has_val:
+        if val_metrics:
+            if "val_loss" in val_metrics:
+                return "val_loss"
+            if "loss" in val_metrics:
+                return "loss"
+            for k in ("token_acc", "exact_acc", "nextbin_acc", "mae"):
+                if k in val_metrics:
+                    return k
+        return "val_loss"
+    return "train_loss"
+
+
+def _pick_metric_mode(metric_name: str, train_cfg) -> str:
+    raw = str(getattr(train_cfg, "best_metric_mode", "auto") or "auto").strip().lower()
+    if raw in ("min", "max"):
+        return raw
+    # auto
+    if "loss" in metric_name or metric_name in ("mae", "mse"):
+        return "min"
+    return "max"
 
 
 def _per_sample_token_ce(
@@ -136,7 +164,7 @@ def train_from_yaml(
 
     train_dl, val_dl = task.build_dataloaders(batch_size=exp.train.batch_size)
 
-    has_oracle_head = hasattr(model, "oracle_parameters") and callable(getattr(model, "oracle_parameters"))
+    has_oracle_head = hasattr(model, "oracle_parameters") and callable(model.oracle_parameters)
     if has_oracle_head:
         opt_main = torch.optim.AdamW(model.backbone_parameters(), lr=exp.train.lr, weight_decay=exp.train.weight_decay)
         opt_oracle = torch.optim.AdamW(model.oracle_parameters(), lr=exp.train.lr, weight_decay=exp.train.weight_decay)
@@ -168,6 +196,15 @@ def train_from_yaml(
 
     model.train()
     start_time = time.time()
+    best_metric_name = _pick_best_metric_name(exp.train, has_val=val_dl is not None, val_metrics=None)
+    best_metric_mode = _pick_metric_mode(best_metric_name, exp.train)
+    best_metric_value: float | None = None
+    last_val_metrics: dict[str, float] | None = None
+    if bool(getattr(exp.train, "save_best_only", True)):
+        print(
+            f"[train] checkpoint policy: best-only "
+            f"(metric={best_metric_name!r}, mode={best_metric_mode})"
+        )
     epoch_iter = range(1, exp.train.epochs + 1)
     if exp.train.progress_bar:
         epoch_iter = tqdm(epoch_iter, total=exp.train.epochs, desc="Epochs")
@@ -205,6 +242,7 @@ def train_from_yaml(
             prev_aux = None
             total_main_f = 0.0
             total_halt_f = 0.0
+            halt_loss_used = False
             loss_sum_f = 0.0
             total_oracle = torch.zeros((), device=device)
             last_metrics: dict[str, float] = {}
@@ -261,21 +299,24 @@ def train_from_yaml(
 
                     # optional halting head supervision (BCE on correctness)
                     # Use logits + BCEWithLogitsLoss so AMP/autocast is safe (plain BCE on probs is not).
-                    if "halt_logit" in out.loss_parts:
-                        targets = task.halt_targets(out.logits, batch_on_device)
-                        if targets is not None:
-                            halt_loss = F.binary_cross_entropy_with_logits(
-                                out.loss_parts["halt_logit"], targets
-                            )
-                            loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
-                            total_halt_f += float(halt_loss.detach().item())
-                    elif "halt_prob" in out.loss_parts:
-                        targets = task.halt_targets(out.logits, batch_on_device)
-                        if targets is not None:
-                            q = out.loss_parts["halt_prob"]
-                            halt_loss = F.binary_cross_entropy(q, targets)
-                            loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
-                            total_halt_f += float(halt_loss.detach().item())
+                    if bool(getattr(exp.train, "use_halt_loss", True)):
+                        if "halt_logit" in out.loss_parts:
+                            targets = task.halt_targets(out.logits, batch_on_device)
+                            if targets is not None:
+                                halt_loss = F.binary_cross_entropy_with_logits(
+                                    out.loss_parts["halt_logit"], targets
+                                )
+                                loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
+                                total_halt_f += float(halt_loss.detach().item())
+                                halt_loss_used = True
+                        elif "halt_prob" in out.loss_parts:
+                            targets = task.halt_targets(out.logits, batch_on_device)
+                            if targets is not None:
+                                q = out.loss_parts["halt_prob"]
+                                halt_loss = F.binary_cross_entropy(q, targets)
+                                loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
+                                total_halt_f += float(halt_loss.detach().item())
+                                halt_loss_used = True
 
                 total_main_f += float(main_loss.detach().item())
                 loss_sum_f += float(loss.detach().item())
@@ -286,7 +327,7 @@ def train_from_yaml(
                 else:
                     loss.backward()
 
-                prev_aux = out.aux_tensor.detach() if out.aux_tensor is not None else None
+                prev_aux = oracle_history_tensor_from_output(model, out)
                 if prev_aux is not None:
                     aux_hist.append(prev_aux)
                     if should_dump_trace:
@@ -427,12 +468,13 @@ def train_from_yaml(
                     "batch_idx": batch_idx,
                     "loss": float(loss_sum_f),
                     "main_loss": float(total_main_f / max(used_sup, 1)),
-                    "halt_loss": float(total_halt_f / max(used_sup, 1)),
                     "used_sup": used_sup,
                     "lr": float(opt_main.param_groups[0]["lr"]),
                     "lr_mult": float(lr_mult),
                     **last_metrics,
                 }
+                if halt_loss_used:
+                    rec["halt_loss"] = float(total_halt_f / max(used_sup, 1))
                 if has_oracle_head:
                     rec["oracle_loss"] = float(total_oracle.detach().item() / max(used_sup, 1))
                 logger.log(rec)
@@ -440,11 +482,12 @@ def train_from_yaml(
                     postfix = {
                         "loss": f"{rec['loss']:.4f}",
                         "main": f"{rec['main_loss']:.4f}",
-                        "halt": f"{rec['halt_loss']:.4f}",
                         "lr": f"{rec['lr']:.2e}",
                         "sup": rec["used_sup"],
                         "step": global_step,
                     }
+                    if "halt_loss" in rec:
+                        postfix["halt"] = f"{rec['halt_loss']:.4f}"
                     if has_oracle_head:
                         postfix["ora"] = f"{rec['oracle_loss']:.4f}"
                     # Show current train accuracy if task reports it.
@@ -482,9 +525,45 @@ def train_from_yaml(
                     amp_dtype=amp_dtype,
                 )
                 logger.log({"kind": "val", "epoch": epoch, "step": global_step, **val})
+                last_val_metrics = dict(val)
                 model.train()
-
-            if global_step % exp.train.ckpt_every == 0:
+            if bool(getattr(exp.train, "save_best_only", True)):
+                metric_value: float | None = None
+                if best_metric_name.startswith("val_"):
+                    key = best_metric_name[len("val_") :]
+                    if last_val_metrics is not None and key in last_val_metrics:
+                        metric_value = float(last_val_metrics[key])
+                elif best_metric_name in ("train_loss", "loss"):
+                    metric_value = float(loss_sum_f)
+                elif last_val_metrics is not None and best_metric_name in last_val_metrics:
+                    metric_value = float(last_val_metrics[best_metric_name])
+                if metric_value is not None:
+                    improved = False
+                    if best_metric_value is None:
+                        improved = True
+                    elif best_metric_mode == "min":
+                        improved = metric_value < best_metric_value
+                    else:
+                        improved = metric_value > best_metric_value
+                    if improved:
+                        best_metric_value = metric_value
+                        ckpt_path = ckpt_dir / "best.pt"
+                        torch.save(
+                            {
+                                "model": model.state_dict(),
+                                "epoch": epoch,
+                                "step": global_step,
+                                "config_path": str(config_path),
+                                "best_metric_name": best_metric_name,
+                                "best_metric_value": best_metric_value,
+                            },
+                            ckpt_path,
+                        )
+                        print(
+                            f"[train] new best checkpoint: step={global_step} "
+                            f"{best_metric_name}={best_metric_value:.6f} -> {ckpt_path.name}"
+                        )
+            elif global_step % exp.train.ckpt_every == 0:
                 ckpt_path = ckpt_dir / f"step_{global_step}.pt"
                 torch.save(
                     {
@@ -501,6 +580,21 @@ def train_from_yaml(
         if exp.train.max_steps is not None and global_step >= exp.train.max_steps:
             break
 
+    if bool(getattr(exp.train, "save_best_only", True)) and best_metric_value is None:
+        ckpt_path = ckpt_dir / "best.pt"
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "epoch": epoch if "epoch" in locals() else 0,
+                "step": global_step,
+                "config_path": str(config_path),
+                "best_metric_name": "fallback_final",
+                "best_metric_value": None,
+            },
+            ckpt_path,
+        )
+        print(f"[train] no best metric observed; saved fallback checkpoint -> {ckpt_path.name}")
+
     if oracle_trace_state is not None and oracle_trace_dir is not None:
         buf_end = oracle_trace_state["buffer"]
         if isinstance(buf_end, list) and len(buf_end) > 0:
@@ -516,13 +610,12 @@ def train_from_yaml(
             )
             buf_end.clear()
 
-    if live_plots:
-        try:
-            from diplom.viz.plot_run import plot_run
+    try:
+        from diplom.viz.plot_run import plot_run
 
-            plot_run(str(run_dir), out_path=str(run_dir / "plots.png"))
-        except Exception as e:
-            print(f"[train] final live plot update failed: {e}")
+        plot_run(str(run_dir), out_path=str(run_dir / "plots.png"))
+    except Exception as e:
+        print(f"[train] final live plot update failed: {e}")
 
 
 @torch.no_grad()
@@ -544,6 +637,7 @@ def _validate_loop(
 ) -> dict[str, float]:
     model.eval()
     metrics_sum: dict[str, float] = {}
+    loss_sum = 0.0
     count = 0
     global_step = 0
     oracle_enabled = oracle_policy in {"greedy", "sampling"} and hasattr(model, "choose_delta")
@@ -605,8 +699,9 @@ def _validate_loop(
                 prev_aux = out.aux_tensor
                 state = out.state
                 sup_step += 1
-                if out.aux_tensor is not None:
-                    aux_hist.append(out.aux_tensor.detach())
+                h_t = oracle_history_tensor_from_output(model, out)
+                if h_t is not None:
+                    aux_hist.append(h_t)
 
                 if sch.halt_threshold is not None and "halt_prob" in out.loss_parts:
                     q = out.loss_parts["halt_prob"]
@@ -650,8 +745,9 @@ def _validate_loop(
                     prev_aux = out2.aux_tensor
                     state = out2.state
                     sup_step += 1
-                    if out2.aux_tensor is not None:
-                        aux_hist.append(out2.aux_tensor.detach())
+                    h2 = oracle_history_tensor_from_output(model, out2)
+                    if h2 is not None:
+                        aux_hist.append(h2)
                     if sch2.halt_threshold is not None and "halt_prob" in out2.loss_parts:
                         q2 = out2.loss_parts["halt_prob"]
                         if bool((q2 > sch2.halt_threshold).all().item()):
@@ -661,6 +757,8 @@ def _validate_loop(
                     break
 
         assert logits is not None
+        loss = task.compute_loss(logits, batch_on_device)
+        loss_sum += float(loss.detach().item())
         m = task.compute_metrics(logits, batch_on_device)
         for k, v in m.items():
             metrics_sum[k] = metrics_sum.get(k, 0.0) + float(v)
@@ -671,5 +769,7 @@ def _validate_loop(
 
     if count == 0:
         return {}
-    return {k: v / count for k, v in metrics_sum.items()}
+    out = {k: v / count for k, v in metrics_sum.items()}
+    out["val_loss"] = loss_sum / count
+    return out
 

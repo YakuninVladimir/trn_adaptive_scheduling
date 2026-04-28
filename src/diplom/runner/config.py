@@ -23,10 +23,14 @@ class TrainConfig:
     log_every: int = 10
     eval_every: int = 100
     ckpt_every: int = 200
+    save_best_only: bool = True
+    best_metric: str = "auto"  # auto|val_loss|train_loss|<metric key>
+    best_metric_mode: str = "auto"  # auto|min|max
     run_dir: str = "runs/dev"
     beta_halt: float = 0.5
+    use_halt_loss: bool = True
     progress_bar: bool = True
-    live_plots: bool = False
+    live_plots: bool = True
     live_plot_every: int = 100
     # Dump per-batch tensors for offline oracle-head training (aux sequence + per-step CE, optional logits/state).
     dump_oracle_trace: bool = False

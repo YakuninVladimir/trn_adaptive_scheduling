@@ -38,6 +38,9 @@ uv run diplom-data text --name ag_news
 # WikiText-103 (raw)
 uv run diplom-data text --name wikitext --dataset-config wikitext-103-raw-v1 --split train
 
+# ARC-AGI (jsonl for arc_agi task)
+uv run diplom-data arc-agi --name lordspline/arc-agi --split-train training --split-val evaluation --dry-run false --materialize
+
 # Временной ряд акций (yfinance)
 uv run diplom-data timeseries-stocks --tickers AAPL MSFT
 ```

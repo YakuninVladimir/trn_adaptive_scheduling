@@ -15,6 +15,7 @@ def validate_from_yaml(
     oracle_policy: str = "none",
     oracle_max_steps: int | None = None,
     oracle_temperature: float = 1.0,
+    progress_bar: bool | None = None,
 ) -> None:
     exp = load_experiment_config(config_path)
     device = resolve_device(exp.train.device)
@@ -52,6 +53,7 @@ def validate_from_yaml(
         oracle_temperature=oracle_temperature,
         use_amp=use_amp,
         amp_dtype=amp_dtype,
+        progress_bar=bool(exp.train.progress_bar) if progress_bar is None else bool(progress_bar),
     )
     ckpt_info = f"checkpoint={checkpoint_path}" if checkpoint_path else "checkpoint=None"
     print(f"[validate] {Path(config_path).name} {ckpt_info} metrics={metrics}")

@@ -28,6 +28,12 @@ def build_parser() -> ArgumentParser:
         default=1.0,
         help="Sampling temperature for --oracle-policy sampling.",
     )
+    p.add_argument(
+        "--progress-bar",
+        type=bool,
+        default=None,
+        help="Enable/disable validation progress bar. Defaults to train.progress_bar from YAML.",
+    )
     return p
 
 
@@ -42,6 +48,7 @@ def main() -> None:
         oracle_policy=args.oracle_policy,
         oracle_max_steps=args.oracle_max_steps,
         oracle_temperature=args.oracle_temperature,
+        progress_bar=args.progress_bar,
     )
 
 

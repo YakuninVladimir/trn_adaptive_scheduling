@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import torch
+from tqdm.auto import tqdm
 
 from diplom.models.trm_oracle import oracle_history_tensor_from_output
 from diplom.runner.config import load_experiment_config
@@ -36,6 +37,48 @@ def _expected_calibration_error(conf: torch.Tensor, is_correct: torch.Tensor, n_
     return float(ece.item())
 
 
+def _record_key(r: dict) -> tuple:
+    return tuple((kk, r.get(kk)) for kk in ("distribution_model", "strategy", "threshold", "budget", "selected_threshold"))
+
+
+def _aggregate_records(records: list[dict]) -> list[dict]:
+    grouped: dict[tuple, dict] = {}
+    for r in records:
+        k = _record_key(r)
+        g = grouped.setdefault(k, {"count": 0})
+        g["count"] += 1
+        for kk, vv in r.items():
+            if kk in ("distribution_model", "strategy", "threshold", "budget", "selected_threshold"):
+                g[kk] = vv
+                continue
+            g[kk] = g.get(kk, 0.0) + float(vv)
+    out = []
+    for g in grouped.values():
+        n = max(int(g.pop("count")), 1)
+        agg = {}
+        for kk, vv in g.items():
+            if kk in ("distribution_model", "strategy", "threshold", "budget", "selected_threshold"):
+                agg[kk] = vv
+            else:
+                agg[kk] = float(vv) / float(n)
+        out.append(agg)
+    return out
+
+
+def _pick_best_record(records: list[dict], metric: str, mode: str) -> dict | None:
+    vals = []
+    for r in records:
+        v = r.get(metric)
+        if v is None:
+            continue
+        vals.append((r, float(v)))
+    if not vals:
+        return None
+    if str(mode).lower() == "min":
+        return min(vals, key=lambda x: x[1])[0]
+    return max(vals, key=lambda x: x[1])[0]
+
+
 def eval_stopping_from_yaml(
     config_path: str,
     checkpoint_path: str | None,
@@ -45,6 +88,10 @@ def eval_stopping_from_yaml(
     budget_grid: str,
     max_steps: int | None,
     out_path: str | None,
+    progress_bar: bool | None = None,
+    honest_split_ratio: float = 0.0,
+    selection_metric: str = "token_acc",
+    selection_mode: str = "max",
 ) -> dict:
     exp = load_experiment_config(config_path)
     device = resolve_device(exp.train.device)
@@ -72,7 +119,37 @@ def eval_stopping_from_yaml(
 
     model.eval()
     records: list[dict] = []
-    for batch_idx, batch in enumerate(val_dl):
+    records_calibration: list[dict] = []
+    records_evaluation: list[dict] = []
+    last_step_sum: dict[str, float] = {}
+    last_step_loss_sum = 0.0
+    last_step_count = 0
+    split_ratio = float(max(0.0, min(1.0, honest_split_ratio)))
+    split_enabled = 0.0 < split_ratio < 1.0
+    use_progress = bool(exp.train.progress_bar) if progress_bar is None else bool(progress_bar)
+    val_iter = enumerate(val_dl)
+    split_cut = None
+    if split_enabled:
+        try:
+            total_known = min(len(val_dl), 50)
+            split_cut = max(1, min(int(total_known * split_ratio), max(total_known - 1, 1)))
+        except TypeError:
+            split_cut = None
+    if use_progress:
+        total = None
+        try:
+            total = min(len(val_dl), 50)
+        except TypeError:
+            total = None
+        val_iter = enumerate(tqdm(val_dl, total=total, desc="Eval stopping", leave=False))
+
+    for batch_idx, batch in val_iter:
+        split_tag: str | None = None
+        if split_enabled:
+            if split_cut is not None:
+                split_tag = "calibration" if batch_idx < split_cut else "evaluation"
+            else:
+                split_tag = "calibration" if (batch_idx % 10) < int(split_ratio * 10) else "evaluation"
         x_tokens = batch.x_tokens.to(device)
         y = batch.y.to(device)
         y_mask = batch.y_mask.to(device) if batch.y_mask is not None else None
@@ -113,6 +190,13 @@ def eval_stopping_from_yaml(
 
         if not logits_hist:
             continue
+        last_logits = logits_hist[-1]
+        last_loss = task.compute_loss(last_logits, batch_on_device)
+        last_step_loss_sum += float(last_loss.detach().item())
+        last_metrics = task.compute_metrics(last_logits, batch_on_device)
+        for mk, mv in last_metrics.items():
+            last_step_sum[mk] = last_step_sum.get(mk, 0.0) + float(mv)
+        last_step_count += 1
         aux_stack = torch.stack(aux_hist, dim=1)  # [B,T,D]
         ce_stack = torch.stack(ce_hist, dim=0)  # [T,B]
         T = ce_stack.size(0)
@@ -145,9 +229,6 @@ def eval_stopping_from_yaml(
                 strategy_l = strategy.lower()
                 if strategy_l == "budget":
                     for budget in budget_vals:
-                        best_th: float | None = None
-                        best_stop = None
-                        best_quality = -1e18
                         for th in threshold_vals:
                             stop_steps = []
                             for b in range(x_tokens.size(0)):
@@ -157,35 +238,43 @@ def eval_stopping_from_yaml(
                             mean_steps = float(torch.tensor(stop_steps, dtype=torch.float32).mean().item())
                             if mean_steps > budget:
                                 continue
-                            quality = 0.0
+                            stop_tensor = torch.tensor(stop_steps, device=device)
+                            regret = costs[stop_tensor - 1, torch.arange(stop_tensor.numel(), device=device)] - costs.min(dim=0).values
+                            metric_acc: dict[str, float] = {}
                             for b, s in enumerate(stop_steps):
-                                m = task.compute_metrics(logits_hist[s - 1][b : b + 1], type(batch_on_device)(
-                                    x_tokens=batch_on_device.x_tokens[b : b + 1],
-                                    y=batch_on_device.y[b : b + 1],
-                                    y_mask=None if batch_on_device.y_mask is None else batch_on_device.y_mask[b : b + 1],
-                                    y_weight=None if batch_on_device.y_weight is None else batch_on_device.y_weight[b : b + 1],
-                                ))
-                                quality += float(sum(m.values()) / max(len(m), 1))
-                            if quality > best_quality:
-                                best_quality = quality
-                                best_th = th
-                                best_stop = stop_steps
-                        if best_stop is None:
-                            continue
-                        stop_tensor = torch.tensor(best_stop, device=device)
-                        regret = costs[stop_tensor - 1, torch.arange(stop_tensor.numel(), device=device)] - costs.min(dim=0).values
-                        rec = {
-                            "distribution_model": dist_model,
-                            "strategy": "budget",
-                            "budget": budget,
-                            "selected_threshold": best_th,
-                            "mean_steps": float(stop_tensor.float().mean().item()),
-                            "mean_regret": float(regret.mean().item()),
-                            "nll": float(torch.stack(nll_per_k).mean().item()),
-                            "brier": float(torch.stack(brier_per_k).mean().item()),
-                            "ece": _expected_calibration_error(torch.cat(conf_per_k), torch.cat(corr_per_k)),
-                        }
-                        records.append(rec)
+                                m = task.compute_metrics(
+                                    logits_hist[s - 1][b : b + 1],
+                                    type(batch_on_device)(
+                                        x_tokens=batch_on_device.x_tokens[b : b + 1],
+                                        y=batch_on_device.y[b : b + 1],
+                                        y_mask=None
+                                        if batch_on_device.y_mask is None
+                                        else batch_on_device.y_mask[b : b + 1],
+                                        y_weight=None
+                                        if batch_on_device.y_weight is None
+                                        else batch_on_device.y_weight[b : b + 1],
+                                    ),
+                                )
+                                for mk, mv in m.items():
+                                    metric_acc[mk] = metric_acc.get(mk, 0.0) + float(mv)
+                            rec = {
+                                "distribution_model": dist_model,
+                                "strategy": "budget",
+                                "budget": budget,
+                                "selected_threshold": th,
+                                "mean_steps": float(stop_tensor.float().mean().item()),
+                                "mean_regret": float(regret.mean().item()),
+                                "nll": float(torch.stack(nll_per_k).mean().item()),
+                                "brier": float(torch.stack(brier_per_k).mean().item()),
+                                "ece": _expected_calibration_error(torch.cat(conf_per_k), torch.cat(corr_per_k)),
+                            }
+                            for mk, mv in metric_acc.items():
+                                rec[mk] = mv / max(len(stop_steps), 1)
+                            records.append(rec)
+                            if split_tag == "calibration":
+                                records_calibration.append(rec)
+                            elif split_tag == "evaluation":
+                                records_evaluation.append(rec)
                     continue
 
                 for th in threshold_vals:
@@ -218,34 +307,48 @@ def eval_stopping_from_yaml(
                     for mk, mv in metric_acc.items():
                         rec[mk] = mv / max(len(stop_steps), 1)
                     records.append(rec)
+                    if split_tag == "calibration":
+                        records_calibration.append(rec)
+                    elif split_tag == "evaluation":
+                        records_evaluation.append(rec)
 
         if batch_idx >= 49:
             break
 
     if not records:
         return {"records": []}
-    # aggregate by keys
-    grouped: dict[tuple, dict] = {}
-    for r in records:
-        k = tuple((kk, r.get(kk)) for kk in ("distribution_model", "strategy", "threshold", "budget", "selected_threshold"))
-        g = grouped.setdefault(k, {"count": 0})
-        g["count"] += 1
-        for kk, vv in r.items():
-            if kk in ("distribution_model", "strategy", "threshold", "budget", "selected_threshold"):
-                g[kk] = vv
+    out = _aggregate_records(records)
+    honest_selection: list[dict] = []
+    if split_enabled and records_calibration and records_evaluation:
+        calib_agg = _aggregate_records(records_calibration)
+        eval_agg = _aggregate_records(records_evaluation)
+        eval_by_key = {_record_key(r): r for r in eval_agg}
+        for dist_model in dist_models:
+            calib_rows = [r for r in calib_agg if str(r.get("distribution_model", "")).lower() == dist_model.lower()]
+            chosen = _pick_best_record(calib_rows, selection_metric, selection_mode)
+            if chosen is None:
                 continue
-            g[kk] = g.get(kk, 0.0) + float(vv)
-    out = []
-    for g in grouped.values():
-        n = max(int(g.pop("count")), 1)
-        agg = {}
-        for kk, vv in g.items():
-            if kk in ("distribution_model", "strategy", "threshold", "budget", "selected_threshold"):
-                agg[kk] = vv
-            else:
-                agg[kk] = float(vv) / float(n)
-        out.append(agg)
-    result = {"records": out}
+            eval_row = eval_by_key.get(_record_key(chosen))
+            if eval_row is None:
+                continue
+            item = dict(eval_row)
+            item["selection_metric"] = selection_metric
+            item["selection_mode"] = selection_mode
+            item["selection_split"] = "calibration"
+            item["evaluation_split"] = "evaluation"
+            item["selection_score_calibration"] = float(chosen.get(selection_metric))
+            honest_selection.append(item)
+    last_step_metrics: dict[str, float] = {}
+    if last_step_count > 0:
+        last_step_metrics = {k: v / float(last_step_count) for k, v in last_step_sum.items()}
+        last_step_metrics["val_loss"] = last_step_loss_sum / float(last_step_count)
+        last_step_metrics["mean_steps"] = float(n_sup)
+    result = {
+        "records": out,
+        "last_step_metrics": last_step_metrics,
+        "honest_split_ratio": split_ratio,
+        "honest_selection": honest_selection,
+    }
     if out_path:
         p = Path(out_path)
     else:

@@ -123,6 +123,8 @@ def _per_sample_token_ce(
 
 def train_from_yaml(
     config_path: str,
+    init_checkpoint: str | None = None,
+    oracle_only: bool = False,
     live_plots_override: bool | None = None,
     live_plot_every_override: int | None = None,
 ) -> None:
@@ -133,6 +135,18 @@ def train_from_yaml(
 
     task = build_task(exp.task)
     model = build_model(exp.model).to(device)
+    if init_checkpoint is not None:
+        ckpt = torch.load(init_checkpoint, map_location="cpu")
+        model.load_state_dict(ckpt["model"], strict=True)
+        print(f"[train] loaded init checkpoint: {init_checkpoint}")
+    if oracle_only:
+        if not (hasattr(model, "oracle_parameters") and callable(model.oracle_parameters)):
+            raise ValueError("--oracle-only requires a model with oracle_parameters().")
+        for p in model.parameters():
+            p.requires_grad = False
+        for p in model.oracle_parameters():
+            p.requires_grad = True
+        print("[train] oracle-only mode: backbone frozen, training oracle head only")
     n_trainable = _count_trainable_parameters(model)
     print(f"[train] model={model.__class__.__name__} trainable_parameters={n_trainable:,}")
     scheduler = build_scheduler(exp.scheduler)
@@ -165,14 +179,22 @@ def train_from_yaml(
     train_dl, val_dl = task.build_dataloaders(batch_size=exp.train.batch_size)
 
     has_oracle_head = hasattr(model, "oracle_parameters") and callable(model.oracle_parameters)
+    if oracle_only and not has_oracle_head:
+        raise ValueError("--oracle-only requires a model with oracle_parameters().")
     if has_oracle_head:
-        opt_main = torch.optim.AdamW(model.backbone_parameters(), lr=exp.train.lr, weight_decay=exp.train.weight_decay)
+        opt_main = (
+            None
+            if oracle_only
+            else torch.optim.AdamW(model.backbone_parameters(), lr=exp.train.lr, weight_decay=exp.train.weight_decay)
+        )
         opt_oracle = torch.optim.AdamW(model.oracle_parameters(), lr=exp.train.lr, weight_decay=exp.train.weight_decay)
     else:
+        if oracle_only:
+            raise ValueError("--oracle-only cannot be used with non-oracle models.")
         opt_main = torch.optim.AdamW(model.parameters(), lr=exp.train.lr, weight_decay=exp.train.weight_decay)
         opt_oracle = None
 
-    base_lr_main = [float(pg["lr"]) for pg in opt_main.param_groups]
+    base_lr_main = [float(pg["lr"]) for pg in opt_main.param_groups] if opt_main is not None else None
     base_lr_oracle = [float(pg["lr"]) for pg in opt_oracle.param_groups] if opt_oracle is not None else None
 
     use_amp = bool(exp.train.amp) and device.type == "cuda"
@@ -228,7 +250,8 @@ def train_from_yaml(
                 lr_schedule=str(exp.train.lr_schedule),
                 lr_min_ratio=float(exp.train.lr_min_ratio),
             )
-            _apply_lr_multiplier(opt_main, base_lr_main, lr_mult)
+            if opt_main is not None and base_lr_main is not None:
+                _apply_lr_multiplier(opt_main, base_lr_main, lr_mult)
             if opt_oracle is not None and base_lr_oracle is not None:
                 _apply_lr_multiplier(opt_oracle, base_lr_oracle, lr_mult)
 
@@ -273,7 +296,8 @@ def train_from_yaml(
 
             # One backward per supervision step so the autograd graph depth is O(1) instead of O(N_sup)
             # (avoids holding activations for all refinement steps until a single backward).
-            opt_main.zero_grad(set_to_none=True)
+            if opt_main is not None:
+                opt_main.zero_grad(set_to_none=True)
             for sup_step in range(1, n_sup + 1):
                 used_sup = sup_step
                 st = SchedulerState(
@@ -286,46 +310,48 @@ def train_from_yaml(
                     task_name=getattr(task, "name", None),
                 )
                 sch = scheduler.get_schedule(st, model_aux=prev_aux)
-                with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                    out = model(
-                        x_tokens,
-                        state=state,
-                        recursion_n=sch.recursion_n,
-                        recursion_T=sch.recursion_T,
-                    )
+                with torch.set_grad_enabled(not oracle_only):
+                    with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+                        out = model(
+                            x_tokens,
+                            state=state,
+                            recursion_n=sch.recursion_n,
+                            recursion_T=sch.recursion_T,
+                        )
 
-                    main_loss = task.compute_loss(out.logits, batch_on_device)
-                    loss = main_loss * float(sch.supervision_weight)
+                        main_loss = task.compute_loss(out.logits, batch_on_device)
+                        loss = main_loss * float(sch.supervision_weight)
 
-                    # optional halting head supervision (BCE on correctness)
-                    # Use logits + BCEWithLogitsLoss so AMP/autocast is safe (plain BCE on probs is not).
-                    if bool(getattr(exp.train, "use_halt_loss", True)):
-                        if "halt_logit" in out.loss_parts:
-                            targets = task.halt_targets(out.logits, batch_on_device)
-                            if targets is not None:
-                                halt_loss = F.binary_cross_entropy_with_logits(
-                                    out.loss_parts["halt_logit"], targets
-                                )
-                                loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
-                                total_halt_f += float(halt_loss.detach().item())
-                                halt_loss_used = True
-                        elif "halt_prob" in out.loss_parts:
-                            targets = task.halt_targets(out.logits, batch_on_device)
-                            if targets is not None:
-                                q = out.loss_parts["halt_prob"]
-                                halt_loss = F.binary_cross_entropy(q, targets)
-                                loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
-                                total_halt_f += float(halt_loss.detach().item())
-                                halt_loss_used = True
+                        # optional halting head supervision (BCE on correctness)
+                        # Use logits + BCEWithLogitsLoss so AMP/autocast is safe (plain BCE on probs is not).
+                        if bool(getattr(exp.train, "use_halt_loss", True)):
+                            if "halt_logit" in out.loss_parts:
+                                targets = task.halt_targets(out.logits, batch_on_device)
+                                if targets is not None:
+                                    halt_loss = F.binary_cross_entropy_with_logits(
+                                        out.loss_parts["halt_logit"], targets
+                                    )
+                                    loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
+                                    total_halt_f += float(halt_loss.detach().item())
+                                    halt_loss_used = True
+                            elif "halt_prob" in out.loss_parts:
+                                targets = task.halt_targets(out.logits, batch_on_device)
+                                if targets is not None:
+                                    q = out.loss_parts["halt_prob"]
+                                    halt_loss = F.binary_cross_entropy(q, targets)
+                                    loss = loss + exp.train.beta_halt * halt_loss * float(sch.supervision_weight)
+                                    total_halt_f += float(halt_loss.detach().item())
+                                    halt_loss_used = True
 
                 total_main_f += float(main_loss.detach().item())
                 loss_sum_f += float(loss.detach().item())
                 last_metrics = task.compute_metrics(out.logits, batch_on_device)
 
-                if use_amp:
-                    scaler_main.scale(loss).backward()
-                else:
-                    loss.backward()
+                if opt_main is not None:
+                    if use_amp:
+                        scaler_main.scale(loss).backward()
+                    else:
+                        loss.backward()
 
                 prev_aux = oracle_history_tensor_from_output(model, out)
                 if prev_aux is not None:
@@ -367,11 +393,12 @@ def train_from_yaml(
                     if bool((q > sch.halt_threshold).all().item()):
                         break
 
-            if use_amp:
-                scaler_main.step(opt_main)
-                scaler_main.update()
-            else:
-                opt_main.step()
+            if opt_main is not None:
+                if use_amp:
+                    scaler_main.step(opt_main)
+                    scaler_main.update()
+                else:
+                    opt_main.step()
 
             # Oracle-step training: full rollout already done, now train
             # prefix-conditioned oracle on future deltas.
@@ -469,7 +496,11 @@ def train_from_yaml(
                     "loss": float(loss_sum_f),
                     "main_loss": float(total_main_f / max(used_sup, 1)),
                     "used_sup": used_sup,
-                    "lr": float(opt_main.param_groups[0]["lr"]),
+                    "lr": float(
+                        opt_main.param_groups[0]["lr"]
+                        if opt_main is not None
+                        else opt_oracle.param_groups[0]["lr"]
+                    ),
                     "lr_mult": float(lr_mult),
                     **last_metrics,
                 }
@@ -634,6 +665,7 @@ def _validate_loop(
     *,
     use_amp: bool = False,
     amp_dtype: torch.dtype = torch.float16,
+    progress_bar: bool = False,
 ) -> dict[str, float]:
     model.eval()
     metrics_sum: dict[str, float] = {}
@@ -643,7 +675,16 @@ def _validate_loop(
     oracle_enabled = oracle_policy in {"greedy", "sampling"} and hasattr(model, "choose_delta")
     infer_step_cap = int(oracle_max_steps) if oracle_max_steps is not None else int(n_sup)
     infer_step_cap = max(infer_step_cap, 1)
-    for batch in val_dl:
+    val_iter = val_dl
+    if progress_bar:
+        total = None
+        try:
+            total = min(len(val_dl), 50)
+        except TypeError:
+            total = None
+        val_iter = tqdm(val_dl, total=total, desc="Validation", leave=False)
+
+    for batch in val_iter:
         global_step += 1
         x_tokens = batch.x_tokens.to(device)
         y = batch.y.to(device)

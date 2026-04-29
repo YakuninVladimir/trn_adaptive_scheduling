@@ -34,6 +34,29 @@ def build_parser() -> ArgumentParser:
     )
     p.add_argument("--max-steps", type=int, default=None, help="Override N_sup at evaluation.")
     p.add_argument("--out", default=None, help="Optional output JSON path.")
+    p.add_argument(
+        "--honest-split-ratio",
+        type=float,
+        default=0.0,
+        help="Calibration/evaluation split ratio for honest threshold selection (0 disables, e.g. 0.5).",
+    )
+    p.add_argument(
+        "--selection-metric",
+        default="token_acc",
+        help="Metric used to select threshold/strategy on calibration split.",
+    )
+    p.add_argument(
+        "--selection-mode",
+        default="max",
+        choices=["min", "max"],
+        help="Optimization mode for --selection-metric.",
+    )
+    p.add_argument(
+        "--progress-bar",
+        type=bool,
+        default=None,
+        help="Enable/disable progress bar. Defaults to train.progress_bar from YAML.",
+    )
     return p
 
 
@@ -51,6 +74,10 @@ def main() -> None:
         budget_grid=args.budget_grid,
         max_steps=args.max_steps,
         out_path=args.out,
+        honest_split_ratio=args.honest_split_ratio,
+        selection_metric=args.selection_metric,
+        selection_mode=args.selection_mode,
+        progress_bar=args.progress_bar,
     )
     print(json.dumps(res, ensure_ascii=False))
 

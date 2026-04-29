@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Validate trained oracle sweep runs and compute stopping metrics.
+# Usage:
+#   ./scripts/validate_oracle_sweep.sh [group] [--dry-run] [--continue-on-error] [--all-distributions] [--honest-split-ratio=<0..1>]
+# groups:
+#   wikitext | arc | all (default: all)
+
+GROUP="${1:-all}"
+if [[ "${GROUP}" == "--dry-run" || "${GROUP}" == "--continue-on-error" ]]; then
+  GROUP="all"
+fi
+
+DRY_RUN=0
+CONTINUE_ON_ERROR=0
+ALL_DISTRIBUTIONS=0
+HONEST_SPLIT_RATIO="0.0"
+for arg in "$@"; do
+  case "${arg}" in
+    --dry-run) DRY_RUN=1 ;;
+    --continue-on-error) CONTINUE_ON_ERROR=1 ;;
+    --all-distributions) ALL_DISTRIBUTIONS=1 ;;
+    --honest-split-ratio=*) HONEST_SPLIT_RATIO="${arg#*=}" ;;
+    wikitext|arc|all) ;;
+    *)
+      if [[ "${arg}" != "${GROUP}" ]]; then
+        echo "Unknown arg: ${arg}" >&2
+        echo "Usage: ./scripts/validate_oracle_sweep.sh [wikitext|arc|all] [--dry-run] [--continue-on-error] [--all-distributions] [--honest-split-ratio=<0..1>]" >&2
+        exit 2
+      fi
+      ;;
+  esac
+done
+
+declare -a CFGS=()
+if [[ "${GROUP}" == "all" || "${GROUP}" == "wikitext" ]]; then
+  CFGS+=(
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_finite_discrete.yaml"
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_smoothed_loss.yaml"
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_mixture_geometric.yaml"
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_mixture_exponential.yaml"
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_power.yaml"
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_negative_binomial.yaml"
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_lognormal.yaml"
+    "configs/oracle_sweep_wikitext/text_wikitext103_trm_oracle_hybrid.yaml"
+  )
+fi
+if [[ "${GROUP}" == "all" || "${GROUP}" == "arc" ]]; then
+  CFGS+=(
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_finite_discrete.yaml"
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_smoothed_loss.yaml"
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_mixture_geometric.yaml"
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_mixture_exponential.yaml"
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_power.yaml"
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_negative_binomial.yaml"
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_lognormal.yaml"
+    "configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_hybrid.yaml"
+  )
+fi
+
+if [[ "${#CFGS[@]}" -eq 0 ]]; then
+  echo "No configs selected." >&2
+  exit 2
+fi
+
+echo "[validate-sweep] group=${GROUP} dry_run=${DRY_RUN} continue_on_error=${CONTINUE_ON_ERROR} all_distributions=${ALL_DISTRIBUTIONS} honest_split_ratio=${HONEST_SPLIT_RATIO}"
+
+for cfg in "${CFGS[@]}"; do
+  run_dir="$(uv run python - <<PY
+import yaml
+with open('${cfg}', 'r', encoding='utf-8') as f:
+    cfg=yaml.safe_load(f)
+print(cfg.get('train',{}).get('run_dir',''))
+PY
+)"
+  if [[ -z "${run_dir}" ]]; then
+    echo "[validate-sweep] missing run_dir in ${cfg}" >&2
+    if [[ "${CONTINUE_ON_ERROR}" -eq 1 ]]; then
+      continue
+    fi
+    exit 1
+  fi
+  ckpt="${run_dir}/checkpoints/best.pt"
+  out_json="${run_dir}/stopping_eval.json"
+  if [[ ! -f "${ckpt}" ]]; then
+    echo "[validate-sweep] checkpoint not found: ${ckpt}" >&2
+    if [[ "${CONTINUE_ON_ERROR}" -eq 1 ]]; then
+      continue
+    fi
+    exit 1
+  fi
+
+  cfg_for_eval="${cfg}"
+  # Build a temporary compatible config if checkpoint/model-schema drift is detected.
+  compat_cfg="$(mktemp)"
+  uv run python - <<PY
+import torch, yaml, pathlib
+cfg_path = pathlib.Path("${cfg}")
+ckpt_path = pathlib.Path("${ckpt}")
+out_path = pathlib.Path("${compat_cfg}")
+cfg = yaml.safe_load(cfg_path.read_text())
+state = torch.load(ckpt_path, map_location="cpu")["model"]
+keys = list(state.keys())
+model = cfg.setdefault("model", {})
+changed = False
+
+# If checkpoint lacks spatial oracle params, force legacy pooled-history mode.
+if not any(k.startswith("oracle_head.spatial.") for k in keys):
+    if model.get("oracle_use_full_y", None) is not False:
+        model["oracle_use_full_y"] = False
+        changed = True
+
+# If checkpoint contains halt head params, enable halt_head for strict load.
+if any(k.startswith("halt_proj.") for k in keys):
+    if model.get("halt_head", None) is not True:
+        model["halt_head"] = True
+        changed = True
+
+if changed:
+    out_path.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+else:
+    # keep file empty as a marker: no compat rewrite needed
+    out_path.write_text("")
+PY
+  if [[ -s "${compat_cfg}" ]]; then
+    cfg_for_eval="${compat_cfg}"
+    echo "[validate-sweep] using compatibility config for ${cfg}"
+  fi
+
+  eval_distributions="$(uv run python - <<PY
+import yaml
+cfg_path = "${cfg_for_eval}"
+cfg = yaml.safe_load(open(cfg_path, "r", encoding="utf-8"))
+model = cfg.get("model", {}) or {}
+target_mode = str(model.get("oracle_target_mode", "delta")).strip().lower()
+dist = str(model.get("oracle_distribution_model", "finite_discrete")).strip()
+if target_mode == "delta":
+    print("finite_discrete")
+else:
+    print(dist if dist else "finite_discrete")
+PY
+)"
+  if [[ "${ALL_DISTRIBUTIONS}" -eq 1 ]]; then
+    eval_distributions="finite_discrete,smoothed_loss,mixture_geometric,mixture_exponential,power,negative_binomial,lognormal,hybrid"
+  fi
+
+  validate_cmd=(uv run diplom-validate --config "${cfg_for_eval}" --checkpoint "${ckpt}" --oracle-policy greedy --oracle-max-steps 8 --progress-bar true)
+  eval_cmd=(
+    uv run diplom-eval-stopping
+    --config "${cfg_for_eval}"
+    --checkpoint "${ckpt}"
+    --distribution-models "${eval_distributions}"
+    --strategies cumulative_probability,future_improvement,hazard,quantile,budget
+    --threshold-grid 0.5,0.6,0.7,0.8,0.9
+    --budget-grid 2,4,6,8
+    --out "${out_json}"
+    --honest-split-ratio "${HONEST_SPLIT_RATIO}"
+    --selection-metric token_acc
+    --selection-mode max
+    --progress-bar true
+  )
+
+  echo "[validate-sweep] validate -> ${cfg}"
+  echo "  checkpoint: ${ckpt}"
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '  CMD: '; printf '%q ' "${validate_cmd[@]}"; echo
+    printf '  CMD: '; printf '%q ' "${eval_cmd[@]}"; echo
+    rm -f "${compat_cfg}"
+    continue
+  fi
+
+  if [[ "${CONTINUE_ON_ERROR}" -eq 1 ]]; then
+    "${validate_cmd[@]}" || { echo "[validate-sweep] validate failed: ${cfg}" ; rm -f "${compat_cfg}"; continue; }
+    "${eval_cmd[@]}" || echo "[validate-sweep] eval-stopping failed: ${cfg}"
+  else
+    "${validate_cmd[@]}"
+    "${eval_cmd[@]}"
+  fi
+  rm -f "${compat_cfg}"
+done
+
+echo "[validate-sweep] done"

@@ -7,6 +7,16 @@ def build_parser() -> ArgumentParser:
     p = ArgumentParser(prog="diplom-train", description="Train an experiment from a YAML config.")
     p.add_argument("--config", required=True, help="Path to experiment YAML config.")
     p.add_argument(
+        "--init-checkpoint",
+        default=None,
+        help="Optional checkpoint to load before training.",
+    )
+    p.add_argument(
+        "--oracle-only",
+        action="store_true",
+        help="Freeze backbone and train only oracle head parameters.",
+    )
+    p.add_argument(
         "--live-plots",
         action="store_true",
         help="Update plots during training (writes run_dir/plots.png periodically).",
@@ -27,6 +37,8 @@ def main() -> None:
 
     train_from_yaml(
         args.config,
+        init_checkpoint=args.init_checkpoint,
+        oracle_only=args.oracle_only,
         live_plots_override=True if args.live_plots else None,
         live_plot_every_override=args.live_plot_every,
     )

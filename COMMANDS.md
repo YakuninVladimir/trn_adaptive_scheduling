@@ -128,6 +128,8 @@ uv run <команда> [аргументы]
 | Флаг | Тип | По умолчанию | Описание |
 |------|-----|--------------|----------|
 | `--config` | str | **обязателен** | Путь к файлу конфигурации (например `configs/sudoku_trm_cgar.yaml`). |
+| `--init-checkpoint` | str, опц. | — | Путь к чекпоинту, который нужно загрузить перед началом обучения (`model` из `.pt`). |
+| `--oracle-only` | флаг | выкл. | Заморозить backbone и дообучать только параметры oracle-head (актуально для `TRMOracle`). |
 | `--live-plots` | флаг | выкл. | Явно включить периодическое обновление `{run_dir}/plots.png` во время обучения (обычно уже включено через `train.live_plots`). |
 | `--live-plot-every` | int, опц. | — | Интервал в глобальных шагах между обновлениями графика; если задан, переопределяет `train.live_plot_every` из YAML. |
 
@@ -271,6 +273,77 @@ uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_hyb
 
 ---
 
+### Скрипт валидации sweep целиком
+
+Файл: `scripts/validate_oracle_sweep.sh`
+
+Что делает для каждого конфига:
+1. запускает `diplom-validate` c `--checkpoint <run_dir>/checkpoints/best.pt --oracle-policy greedy --oracle-max-steps 8 --progress-bar true`;
+2. запускает `diplom-eval-stopping` c `--distribution-models <model.oracle_distribution_model>` (по умолчанию только модель из конфига), `--honest-split-ratio <ratio> --selection-metric token_acc --selection-mode max --progress-bar true` и сохраняет `stopping_eval.json` в тот же `run_dir`.
+3. если структура чекпоинта не совпадает с текущим YAML (legacy `oracle_use_full_y`/`halt_head`), автоматически создаёт временный совместимый конфиг и использует его только для текущего запуска.
+
+| Аргумент | По умолчанию | Описание |
+|----------|--------------|----------|
+| `group` | `all` | Какие наборы валидировать: `wikitext`, `arc`, `all`. |
+| `--dry-run` | выкл. | Показать команды, не запускать валидацию. |
+| `--continue-on-error` | выкл. | Продолжать sweep-валидацию, даже если один конфиг упал. |
+| `--all-distributions` | выкл. | Вместо модели из YAML прогонять полный список распределений (`finite_discrete,...,hybrid`). |
+| `--honest-split-ratio=<0..1>` | `0.0` | Holdout-режим: доля calibration-части для подбора threshold/strategy (например `0.5` = 50/50 calibration/evaluation). |
+
+Примеры:
+
+```bash
+# Показать план валидации
+./scripts/validate_oracle_sweep.sh all --dry-run
+
+# Провалидировать только ARC-AGI
+./scripts/validate_oracle_sweep.sh arc
+
+# Провалидировать всё, продолжая при ошибках
+./scripts/validate_oracle_sweep.sh all --continue-on-error
+
+# Провалидировать и прогнать все distribution-модели для каждого чекпоинта
+./scripts/validate_oracle_sweep.sh all --all-distributions
+
+# Честная оценка: подбор на calibration, отчёт на evaluation
+./scripts/validate_oracle_sweep.sh arc --continue-on-error --honest-split-ratio=0.5
+
+# Диагностика скрипта: проверка bash-синтаксиса и dry-run ARC-валидации
+bash -n scripts/validate_oracle_sweep.sh && ./scripts/validate_oracle_sweep.sh arc --dry-run --continue-on-error
+```
+
+---
+
+### Скрипт oracle-only дообучения sweep целиком
+
+Файл: `scripts/finetune_oracle_sweep.sh`
+
+Что делает для каждого конфига:
+1. берёт исходный чекпоинт `best.pt` из `train.run_dir/checkpoints/`;
+2. создаёт временный конфиг с новым `train.run_dir = <исходный_run_dir>/oracle_finetune`;
+3. запускает `diplom-train --init-checkpoint <best.pt> --oracle-only`.
+
+| Аргумент | По умолчанию | Описание |
+|----------|--------------|----------|
+| `group` | `all` | Какие наборы запускать: `wikitext`, `arc`, `all`. |
+| `--dry-run` | выкл. | Показать команды, не запускать дообучение. |
+| `--continue-on-error` | выкл. | Продолжать sweep, даже если один конфиг упал. |
+
+Примеры:
+
+```bash
+# Показать план oracle-only дообучения
+./scripts/finetune_oracle_sweep.sh all --dry-run
+
+# Дообучить только ARC-AGI oracle-head
+./scripts/finetune_oracle_sweep.sh arc
+
+# Дообучить всё, продолжая при ошибках
+./scripts/finetune_oracle_sweep.sh all --continue-on-error
+```
+
+---
+
 ## `diplom-validate`
 
 Валидация по конфигу; опциональная загрузка весов.
@@ -282,6 +355,7 @@ uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_hyb
 | `--oracle-policy` | choice | `none` | Одно из: `none`, `greedy`, `sampling` — политика инференса для `TRMOracle` (для обычного `TRM` без эффекта). |
 | `--oracle-max-steps` | int, опц. | — | Верхняя граница шагов рассуждения при oracle-политике (иначе берётся `N_sup` из модели). |
 | `--oracle-temperature` | float | `1.0` | Температура softmax при `--oracle-policy sampling`. |
+| `--progress-bar` | bool, опц. | `null` | Включить/выключить progress bar валидации. Если не задано, берётся `train.progress_bar` из YAML. |
 
 ---
 
@@ -299,8 +373,53 @@ uv run diplom-train --config configs/oracle_sweep_arc_agi/arc_agi_trm_oracle_hyb
 | `--budget-grid` | str | `2,4,6,8` | CSV-бюджеты (`E[tau] <= C`) для budget-правила. |
 | `--max-steps` | int, опц. | — | Переопределить `N_sup` в eval. |
 | `--out` | str, опц. | — | Путь к итоговому JSON; если не задано, пишется в `{run_dir}/stopping_eval.json`. |
+| `--honest-split-ratio` | float | `0.0` | Доля calibration-части для честного выбора threshold/strategy (`0` отключает holdout). |
+| `--selection-metric` | str | `token_acc` | Метрика выбора лучшей конфигурации на calibration-части. |
+| `--selection-mode` | choice | `max` | Режим оптимизации selection-метрики (`min`/`max`). |
+| `--progress-bar` | bool, опц. | `null` | Включить/выключить progress bar во время `eval-stopping`. Если не задано, берётся `train.progress_bar` из YAML. |
 
-Выход: агрегированные метрики по всем комбинациям `distribution_model × strategy × threshold/budget`, включая `mean_steps`, `mean_regret`, `nll`, `brier`, `ece` и task-метрики.
+Выход:
+- `records`: агрегированные метрики по комбинациям `distribution_model × strategy × threshold/budget` (включая budget-варианты по `selected_threshold`);
+- `last_step_metrics`: baseline при выборе только последнего шага (`N_sup`);
+- `honest_selection`: при `--honest-split-ratio > 0` — выбранная на calibration строка и её качество на evaluation.
+
+---
+
+### Скрипт сводной таблицы stopping-eval
+
+Файл: `scripts/summarize_stopping_eval.py`
+
+Собирает `stopping_eval.json` по sweep-конфигам, фильтрует записи по `trained_distribution_model` из YAML и строит:
+- CSV-таблицу;
+- Markdown-таблицу;
+- сравнение лучшей стратегии (по выбранной метрике) с baseline `last_step_metrics`.
+
+| Аргумент | По умолчанию | Описание |
+|----------|--------------|----------|
+| `--group` | `all` | Какие наборы сводить: `wikitext`, `arc`, `all`. |
+| `--metric` | `token_acc` | Метрика выбора лучшей стратегии внутри каждого `run_dir`. |
+| `--mode` | `max` | Режим оптимизации метрики: `min` или `max`. |
+| `--use-honest-selection` | выкл. | Брать кандидатов из `honest_selection` (если есть), а не из полного `records`. |
+| `--out-csv` | авто | Путь к CSV (если не задан, пишется в `runs/oracle_sweep_<group>/stopping_summary.csv`, для `all` — `runs/oracle_sweep_summary.csv`). |
+| `--out-md` | авто | Путь к Markdown-таблице (аналогично CSV). |
+
+Примеры:
+
+```bash
+# Сводка по ARC sweep (лучшее по минимальному regret)
+uv run python scripts/summarize_stopping_eval.py --group arc --metric mean_regret --mode min
+
+# Сводка по ARC из honest_selection (holdout-оценка)
+uv run python scripts/summarize_stopping_eval.py --group arc --metric token_acc --mode max --use-honest-selection
+
+# Сводка по ARC sweep (лучшее по максимальному token_acc) в явные файлы
+uv run python scripts/summarize_stopping_eval.py \
+  --group arc \
+  --metric token_acc \
+  --mode max \
+  --out-csv runs/oracle_sweep_arc_agi/stopping_summary_token_acc.csv \
+  --out-md runs/oracle_sweep_arc_agi/stopping_summary_token_acc.md
+```
 
 ---
 
@@ -352,7 +471,7 @@ uv run diplom-train --config configs/sudoku_trm_1h.yaml --live-plots --live-plot
 # Валидация TRMOracle с greedy oracle
 uv run diplom-validate --config configs/sudoku_trm_oracle_1h.yaml \
   --checkpoint runs/trm_oracle_1h/checkpoints/step_26000.pt \
-  --oracle-policy greedy --oracle-max-steps 32
+  --oracle-policy greedy --oracle-max-steps 32 --progress-bar true
 
 # График после прогона
 uv run diplom-plot --run-dir runs/dev_trm_cgar_sudoku
@@ -365,6 +484,11 @@ uv run diplom-data arc-agi --name lordspline/arc-agi --split-train training --sp
 
 # TRM + Oracle на ARC-AGI
 uv run diplom-train --config configs/arc_agi_trm_oracle.yaml
+
+# Oracle-only дообучение от готового чекпоинта
+uv run diplom-train --config configs/arc_agi_trm_oracle.yaml \
+  --init-checkpoint runs/arc_agi_trm_oracle/checkpoints/best.pt \
+  --oracle-only
 
 # TRM + Oracle на WikiText-103
 uv run diplom-train --config configs/text_wikitext103_trm_oracle.yaml
@@ -385,7 +509,8 @@ uv run diplom-eval-stopping --config configs/text_wikitext103_trm_oracle.yaml \
   --strategies cumulative_probability,future_improvement,hazard,quantile,budget \
   --threshold-grid 0.5,0.6,0.7,0.8,0.9 \
   --budget-grid 2,4,6,8 \
-  --out runs/text_wikitext103_trm_oracle/stopping_eval.json
+  --out runs/text_wikitext103_trm_oracle/stopping_eval.json \
+  --progress-bar true
 
 # Сборка LaTeX-диплома
 uv run diplom-tex-build --workdir tex --main thesis.tex --out-dir build --engine xelatex --passes 2

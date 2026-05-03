@@ -15,3 +15,6 @@ runs/
 .DS_Store
 .vscode/
 
+# LaTeX build output (latexmk -outdir=build)
+tex/build/
+

@@ -1,0 +1,7 @@
+family,policybase,policyft,tokbase,tokft,taubase,tauft
+finite_discrete,cum./0.9,haz./0.5,0.730,0.732,3.44,1.98
+smoothed_loss,cum./0.6,cum./0.6,0.737,0.737,5.00,5.00
+mixture_geometric,cum./0.9,cum./0.6,0.745,0.744,4.25,1.74
+mixture_exponential,cum./0.8,haz./0.5,0.742,0.741,3.50,3.44
+power,cum./0.8,cum./0.6,0.741,0.740,3.71,1.87
+negative_binomial,cum./0.9,cum./0.6,0.731,0.727,3.85,2.35

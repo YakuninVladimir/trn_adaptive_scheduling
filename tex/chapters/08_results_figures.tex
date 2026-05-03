@@ -1,0 +1,142 @@
+\section{Результаты на ARC-AGI и иллюстративные графики}\label{sec:arc_results}
+
+\DTLloadrawdb{arcbase}{tables/arc_stopping_base.csv}%
+\DTLloadrawdb{arcft}{tables/arc_stopping_finetune_compare.csv}%
+\DTLloadrawdb{tauhist}{tables/tau_star_hist_finite_discrete_val.csv}%
+\newcommand{\TauHistRows}{}%
+\DTLforeach*{tauhist}{\ZcA=step,\ZcB=count,\ZcC=probability}{%
+  \csname protected@edef\endcsname\DTtabrow{\ZcA & \ZcB & \noexpand\num{\ZcC}\noexpand\\}%
+  \expandafter\appto\expandafter\TauHistRows\expandafter{\DTtabrow}%
+}%
+\newcommand{\ArcBaseRows}{}%
+\DTLforeach*{arcbase}{\ZcA=family,\ZcB=strategy,\ZcC=threshold,\ZcD=meantau,\ZcE=regret,\ZcF=tokbest,\ZcG=nlltau}{%
+  \csname protected@edef\endcsname\DTtabrow{\noexpand\texttt{\ZcA} & \noexpand\texttt{\ZcB} & \noexpand\num{\ZcC} & \noexpand\num{\ZcD} & \noexpand\num{\ZcE} & \noexpand\num{\ZcF} & \noexpand\num{\ZcG}\noexpand\\}%
+  \expandafter\appto\expandafter\ArcBaseRows\expandafter{\DTtabrow}%
+}%
+\newcommand{\ArcFtRows}{}%
+\DTLforeach*{arcft}{\ZcA=family,\ZcB=policybase,\ZcC=policyft,\ZcD=tokbase,\ZcE=tokft,\ZcF=taubase,\ZcG=tauft}{%
+  \csname protected@edef\endcsname\DTtabrow{\noexpand\texttt{\ZcA} & \ZcB & \ZcC & \noexpand\num{\ZcD} & \noexpand\num{\ZcE} & \noexpand\num{\ZcF} & \noexpand\num{\ZcG}\noexpand\\}%
+  \expandafter\appto\expandafter\ArcFtRows\expandafter{\DTtabrow}%
+}%
+
+\subsection{Эмпирическое распределение оракульного \(\tau^\star\)}
+
+На рис.~\ref{fig:arc_tau_hist} показана гистограмма оракульного времени остановки на валидационном подмножестве ARC-AGI для конфигурации \texttt{finite\_discrete} (максимум \(K=8\) внутренних шагов, \(400\) задач в оценке по JSON-артефакту построения графика). Около \(82\%\) массы сосредоточено в \(\tau^\star=0\) в смысле выбранного в коде критерия \texttt{argmax\_masked\_token\_accuracy\_per\_supervision\_step}; заметная доля приходится на \(\tau^\star\in\{1,2,3\}\), хвост до \(K\) ненулевой. Это подтверждает, что адаптивная остановка потенциально содержательна: однородный запуск на полную глубину смешивает простые и сложные задачи.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth]{arc_tau_star_hist_val.png}
+\caption{Эмпирическое распределение оракульного \(\tau^\star\) на валидации (ARC-AGI, ветка \texttt{finite\_discrete}).}
+\label{fig:arc_tau_hist}
+\end{figure}
+
+Численные счётчики и доли по шагам (источник: \texttt{tables/tau\_star\_hist\_finite\_discrete\_val.csv}, согласован с \texttt{tau\_star\_hist\_val.json}) приведены в табл.~\ref{tab:tau_hist_csv}.
+
+\begin{table}[H]
+\centering
+\caption{Эмпирическое распределение \(\tau^\star\) по шагам (валидация, \texttt{finite\_discrete})}
+\label{tab:tau_hist_csv}
+\small
+\begin{tabular}{r r S[table-format=1.4]}
+\toprule
+Шаг & Число задач & {Доля} \\
+\midrule
+\TauHistRows
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Сводка по семействам распределений (базовое обучение)}
+
+Табл.~\ref{tab:arc_base} агрегирует лучшую по сетке строку для каждого обученного семейства (метрика отбора: \texttt{token\_acc\_best\_of\_policies}). Полный перебор порогов и стратегий хранится в \texttt{stopping\_eval.json} каждого прогона; табличные значения вынесены в \texttt{tables/arc\_stopping\_base.csv}.
+
+\begin{table}[H]
+\centering
+\caption{ARC-AGI, валидация: лучшая комбинация правила остановки после базового обучения}
+\label{tab:arc_base}
+\small
+\begin{tabular}{l l S[table-format=1.1] S[table-format=1.2] S[table-format=1.5] S[table-format=1.3] S[table-format=1.3]}
+\toprule
+Семейство & Стратегия & {Порог} & {\(\overline{\tau}\)} & {Регрет} & {\(\mathrm{tok}_{\mathrm{best}}\)} & {\(\mathrm{NLL}_\tau\)} \\
+\midrule
+\ArcBaseRows
+\bottomrule
+\end{tabular}
+\end{table}
+
+Здесь \(\overline{\tau}=\) \texttt{best\_mean\_steps} --- среднее число внутренних шагов при выбранном правиле; средний регрет --- \texttt{best\_mean\_regret} из сводки; \(\mathrm{tok}_{\mathrm{best}}=\) \texttt{best\_token\_acc\_best\_of\_policies}; \(\mathrm{NLL}_\tau=\) \texttt{best\_nll}. Доля полностью точных решеток на уровне токенов близка к нулю, что ожидаемо для сложной задачи при пошаговой разметке.
+
+\subsection{Влияние дообучения только оракула}
+
+Табл.~\ref{tab:arc_ft} сопоставляет ту же метрику \(\mathrm{tok}_{\mathrm{best}}\) и среднее число шагов до и после \texttt{oracle\_finetune}. Пороги и стратегии переоптимизируются заново на валидации после дообучения. Данные: \texttt{tables/arc\_stopping\_finetune\_compare.csv}.
+
+\begin{table}[H]
+\centering
+\caption{Сравнение базового чекпойнта и \texttt{oracle\_finetune} (ARC-AGI)}
+\label{tab:arc_ft}
+\small
+\begin{tabular}{l c c S S S S}
+\toprule
+ & \multicolumn{2}{c}{Стратегия / порог} & \multicolumn{2}{c}{\(\mathrm{tok}_{\mathrm{best}}\)} & \multicolumn{2}{c}{\(\overline{\tau}\)} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Семейство & база & FT & {база} & {FT} & {база} & {FT} \\
+\midrule
+\ArcFtRows
+\bottomrule
+\end{tabular}
+\end{table}
+
+Для \texttt{smoothed\_loss} дообучение не меняет оптимальную строку сводки. Для \texttt{finite\_discrete}, \texttt{mixture\_geometric} и \texttt{power} оптимальное правило смещается в сторону более агрессивной ранней остановки (\texttt{hazard} или меньший порог \texttt{cumulative\_probability}), при этом \(\mathrm{tok}_{\mathrm{best}}\) меняется незначительно. Для \texttt{negative\_binomial} наблюдается небольшое снижение \(\mathrm{tok}_{\mathrm{best}}\) после дообучения; интерпретация этого факта обсуждается в разд.~\ref{sec:discussion}.
+
+\subsection{Кривая качество--стоимость и калибровка}
+
+Полные кривые «качество--среднее число шагов'' строятся по всем строкам \texttt{stopping\_eval.json} и здесь не приводятся. На рис.~\ref{fig:quality_cost} оставлен лишь шаблон осей: фактические точки получаются при экспорте JSON в скрипт визуализации.
+
+\begin{figure}[H]
+\centering
+\fbox{\begin{minipage}{0.82\textwidth}
+\centering
+\vspace{8mm}
+\small ось X: среднее число внутренних шагов; ось Y: токеновая точность / потеря; семейства распределений дают разные траектории при изменении порога.
+\vspace{8mm}
+\end{minipage}}
+\caption{Шаблон кривой качество--стоимость (заполнить по \texttt{stopping\_eval.json})}
+\label{fig:quality_cost}
+\end{figure}
+
+Reliability-диаграммы для событий \(\{\tau^\star\le k\}\) могут быть построены по полям \texttt{brier}, \texttt{ece} из лучших строк сетки; на рис.~\ref{fig:calibration} --- заготовка.
+
+\begin{figure}[H]
+\centering
+\fbox{\begin{minipage}{0.82\textwidth}
+\centering
+\vspace{8mm}
+\small ось X: предсказанная вероятность; ось Y: эмпирическая частота; диагональ --- идеальная калибровка \cite{guo2017calibration}.
+\vspace{8mm}
+\end{minipage}}
+\caption{Шаблон калибровочной диаграммы для \(\tau^\star\le k\)}
+\label{fig:calibration}
+\end{figure}
+
+\subsection{Итоговая таблица для языкового трека (плейсхолдер)}
+
+Табл.~\ref{tab:main_results_template} остается для будущего заполнения при подключении языковых прогонов к тому же коду оценки остановки.
+
+\begin{table}[H]
+\centering
+\caption{Иллюстративный шаблон итогового сравнения на языковой задаче (не измерено в данной работе)}
+\label{tab:main_results_template}
+\begin{tabularx}{\textwidth}{lYYYYY}
+\toprule
+Метод & Потеря речи & Доля совпадений & \(\mathrm{NLL}_{\tau}\) & Среднее число шагов & Экономия \\
+\midrule
+Фиксированная глубина & \placeholder & \placeholder & не применяется & \placeholder & \placeholder \\
+Полный запуск рекурсии & \placeholder & \placeholder & не применяется & \placeholder & \placeholder \\
+Эвристика по энтропии & \placeholder & \placeholder & не применяется & \placeholder & \placeholder \\
+Конечное распределение & \placeholder & \placeholder & \placeholder & \placeholder & \placeholder \\
+Сглаженная разметка & \placeholder & \placeholder & \placeholder & \placeholder & \placeholder \\
+Смесь геометрических & \placeholder & \placeholder & \placeholder & \placeholder & \placeholder \\
+Отрицательное биномиальное & \placeholder & \placeholder & \placeholder & \placeholder & \placeholder \\
+\bottomrule
+\end{tabularx}
+\end{table}

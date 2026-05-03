@@ -1,0 +1,88 @@
+% Shared preamble (included after \documentclass).
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage{cmap}
+  \usepackage[T2A]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{tempora}
+  \usepackage[english,russian]{babel}
+\else
+  \usepackage{fontspec}
+  % DejaVu из texmf (кириллица; путь совпадает с типовой установкой TeX Live).
+  \setmainfont{DejaVuSerif.ttf}[
+    Path=/usr/share/texmf-dist/fonts/truetype/public/dejavu/,
+    BoldFont=DejaVuSerif-Bold.ttf,
+    ItalicFont=DejaVuSerif-Italic.ttf,
+    BoldItalicFont=DejaVuSerif-BoldItalic.ttf]
+  \setsansfont{DejaVuSans.ttf}[
+    Path=/usr/share/texmf-dist/fonts/truetype/public/dejavu/,
+    BoldFont=DejaVuSans-Bold.ttf,
+    ItalicFont=DejaVuSans-Oblique.ttf,
+    BoldItalicFont=DejaVuSans-BoldOblique.ttf]
+  \setmonofont{DejaVuSansMono.ttf}[
+    Path=/usr/share/texmf-dist/fonts/truetype/public/dejavu/,
+    BoldFont=DejaVuSansMono-Bold.ttf,
+    ItalicFont=DejaVuSansMono-Oblique.ttf,
+    BoldItalicFont=DejaVuSansMono-BoldOblique.ttf]
+  \usepackage{polyglossia}
+  \setdefaultlanguage{russian}
+  \setotherlanguage{english}
+\fi
+
+\usepackage{amsmath,amssymb,amsfonts,mathtools,bm}
+\usepackage{graphicx}
+\usepackage{etoolbox}
+\usepackage{datatool}
+\usepackage{siunitx}
+\sisetup{output-decimal-marker={,},range-phrase={--},detect-weight=true,detect-inline-family=text}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{xcolor}
+\usepackage{indentfirst}
+\usepackage{url}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{titlesec}
+\usepackage{listings}
+\usepackage{microtype}
+% backend=bibtex: works without системного `biber` (достаточно `bibtex` из TeX Live).
+\usepackage[backend=bibtex,style=numeric,sorting=nyt,maxbibnames=99,autolang=none]{biblatex}
+\addbibresource{references.bib}
+
+\graphicspath{{img/}}
+
+\setcounter{tocdepth}{2}
+\titleformat{\section}{\normalfont\bfseries\large}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\bfseries\normalsize}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\bfseries\normalsize}{\thesubsubsection}{1em}{}
+\titlespacing*{\section}{0pt}{0pt}{1.2em}
+\titlespacing*{\subsection}{0pt}{1.2em}{0.6em}
+\titlespacing*{\subsubsection}{0pt}{1em}{0.5em}
+\newcommand{\sectionbreak}{\clearpage}
+\setlength{\parindent}{1.25cm}
+\setlength{\parskip}{0pt}
+\setlist[itemize]{noitemsep,topsep=0.2em,leftmargin=1.25cm}
+\setlist[enumerate]{noitemsep,topsep=0.2em,leftmargin=1.25cm}
+\captionsetup{labelsep=period,font=small}
+\sloppy
+\frenchspacing
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\placeholder}{\textemdash}
+\newcommand{\todo}[1]{\textcolor{gray}{[заполнить: #1]}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\E}{\mathsf{E}}
+\DeclareMathOperator{\Var}{\mathsf{D}}
+\DeclareMathOperator{\Cov}{\mathsf{Cov}}
+\DeclareMathOperator{\KL}{KL}
+\DeclareMathOperator{\logit}{logit}
+\providecommand{\Prob}{}\renewcommand{\Prob}{\mathsf{P}}
+\newcommand{\A}{\mathcal{A}}
+\newcommand{\F}{\mathcal{F}}
+\newcommand{\Hh}{\mathcal{H}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ind}{\mathbb{I}}
+\newcommand{\DeltaSimplex}{\Delta}
+
+\lstset{showstringspaces=false,tabsize=4,basicstyle=\ttfamily\small,breaklines=true,captionpos=b,keepspaces=true}

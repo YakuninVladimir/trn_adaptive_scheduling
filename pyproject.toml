@@ -24,6 +24,9 @@ dependencies = [
     "peft>=0.17.1,<1",
     "ninja>=1.13.0",
     "hatchling>=1.29.0",
+    "causal-conv1d>=1.6.1",
+    "mamba-ssm>=2.3.1",
+    "seaborn>=0.13.2",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +42,7 @@ diplom-validate = "diplom.cli.validate:main"
 diplom-plot = "diplom.cli.plot:main"
 diplom-eval-stopping = "diplom.cli.eval_stopping:main"
 diplom-tex-build = "diplom.cli.tex_build:main"
+diplom-draw-arch = "diplom.diagram.arch_figures:main"
 
 [tool.ruff]
 line-length = 100

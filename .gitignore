@@ -33,3 +33,9 @@ tex/*.toc
 tex/*.xdv
 tex/*-blx.bib
 
+# LaTeX при сборке из корня репозитория (не коммитить)
+/thesis.aux
+/thesis.log
+/thesis.fls
+/thesis.fdb_latexmk
+

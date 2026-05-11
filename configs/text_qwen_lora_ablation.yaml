@@ -4,7 +4,7 @@ task:
   dataset_config: wikitext-103-raw-v1
   split_train: train
   split_val: validation
-  train_fraction: 0.2
+  train_fraction: 0.1
   val_fraction: 1
   tokenizer: tiiuae/Falcon-H1-Tiny-90M-Base
   text_field: text

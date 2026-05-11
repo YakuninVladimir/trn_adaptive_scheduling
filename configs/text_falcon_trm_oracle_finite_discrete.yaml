@@ -1,3 +1,5 @@
+# WikiText-103 LM: TRM + oracle (finite_discrete), только токенизатор Falcon (32768).
+# Чтобы подавать на TRM именно скрытые состояния Falcon, см. configs/text_falcon_frozen_llm_trm_oracle_finite_discrete.yaml (model.name: frozen_llm_trm_oracle).
 task:
   name: wikitext_lm
   dataset_name: wikitext
@@ -8,11 +10,9 @@ task:
   tokenizer: tiiuae/Falcon-H1-Tiny-90M-Base
   text_field: text
   seq_len: 256
+
 model:
-  name: frozen_llm_trm_oracle
-  base_model_name: tiiuae/Falcon-H1-Tiny-90M-Base
-  freeze_backbone: true
-  pos_encoding: none
+  name: trm_oracle
   vocab_size: 32768
   seq_len: 256
   d_model: 256
@@ -29,23 +29,25 @@ model:
   oracle_n_layers: 2
   oracle_d_ff: 512
   oracle_distribution_lambda: 0.01
-  halt_head: false
   oracle_target_mode: distribution
-  oracle_distribution_model: mixture_geometric
+  oracle_distribution_model: finite_discrete
+  halt_head: false
+
 scheduler:
   name: fixed
   recursion_n: 4
   recursion_T: 2
+
 train:
   seed: 42
   device: auto
-  epochs: 1
-  batch_size: 16
+  epochs: 5
+  batch_size: 8
   lr: 0.0003
   live_plots: true
   save_best_only: true
   best_metric: auto
   best_metric_mode: auto
+  run_dir: runs/text_falcon_trm_oracle_finite_discrete
   live_plot_every: 10
   use_halt_loss: false
-  run_dir: runs/oracle_sweep_wikitext_falcon/mixture_geometric

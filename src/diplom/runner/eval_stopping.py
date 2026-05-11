@@ -249,6 +249,7 @@ def eval_stopping_from_yaml(
     last_step_sum: dict[str, float] = {}
     last_step_loss_sum = 0.0
     last_step_count = 0
+    last_step_regret_sum = 0.0
     per_step_token_acc_sum = [0.0] * n_sup
     split_ratio = float(max(0.0, min(1.0, honest_split_ratio)))
     split_enabled = 0.0 < split_ratio < 1.0
@@ -336,6 +337,8 @@ def eval_stopping_from_yaml(
         tau_star = torch.argmax(acc_stack, dim=0) + 1  # [B], 1..T — best masked token accuracy step
         tau_idx_opt = (tau_star - 1).clamp_min(0)
         ce_opt = ce_stack[tau_idx_opt, torch.arange(ce_stack.size(1), device=device)]
+        reg_last = ce_stack[T - 1] - ce_opt
+        last_step_regret_sum += float(reg_last.mean().item())
 
         for dist_model in dist_models:
             pmf_per_k: list[torch.Tensor] = []
@@ -465,6 +468,7 @@ def eval_stopping_from_yaml(
         last_step_metrics = {k: v / float(last_step_count) for k, v in last_step_sum.items()}
         last_step_metrics["val_loss"] = last_step_loss_sum / float(last_step_count)
         last_step_metrics["mean_steps"] = float(n_sup)
+        last_step_metrics["mean_regret"] = last_step_regret_sum / float(last_step_count)
     per_step_token_acc: list[float] = []
     if last_step_count > 0:
         per_step_token_acc = [per_step_token_acc_sum[i] / float(last_step_count) for i in range(n_sup)]

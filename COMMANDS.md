@@ -713,7 +713,7 @@ uv run python scripts/plot_arc_arcagi_figures.py \
 
 Файл: `scripts/plot_arc_quality_cost.py`
 
-Строит диаграмму рассеяния: по горизонтали \(\bar{\tau}\), по вертикали \(\mathrm{tok}_{\mathrm{best}}\) — строки совпадают с `tex/tables/arc_stopping_base.csv`: столбцы `family`, `meantau`, `tokbest`; русские названия семейств задаются встроенным словарём. Положение точек должно совпадать с таблицей лучших строк по семействам в главе про ARC.
+Строит диаграмму рассеяния: по горизонтали \(\bar{\tau}\), по вертикали \(\mathrm{tok}_{\mathrm{best}}\). Источник — `tex/tables/arc_stopping_base.csv` (столбцы `family`, `meantau`, `tokbest`). Русские подписи семейств задаются встроенным словарём.
 
 | Аргумент | Тип | По умолчанию | Описание |
 |----------|-----|--------------|----------|
@@ -858,6 +858,19 @@ uv run python scripts/summarize_stopping_eval.py \
 | `--passes` | int | `2` | Число fallback-прогонов движка, если `latexmk` не установлен. |
 | `--clean` | флаг | выкл. | Перед сборкой выполнить очистку вспомогательных файлов (`latexmk -c`). |
 
+Ручной запуск `latexmk` (как в проверке после правок TeX): из каталога `tex/`, иначе не находится `BYUPhys.cls` и относительные `\input`.
+
+```bash
+cd tex && latexmk -pdf -interaction=nonstopmode -halt-on-error thesis.tex
+```
+
+| Аргумент | Назначение |
+|----------|------------|
+| `-pdf` | Сборка через `pdflatex` в PDF. |
+| `-interaction=nonstopmode` | Не останавливаться на интерактивных запросах LaTeX. |
+| `-halt-on-error` | Завершить при первой фатальной ошибке. |
+| `thesis.tex` | Главный файл; путь задан относительно текущего каталога (`tex/`). |
+
 Поведение:
 - при наличии `latexmk` используется он (`-xelatex`/`-lualatex`/`-pdf`);
 - при отсутствии `latexmk` выполняется заданное число прогонов выбранного движка, затем при наличии `thesis.bcf` вызывается `biber`, иначе при `biblatex`+`backend=bibtex` — `bibtex` из каталога `build/` с `BIBINPUTS`, включающим `workdir`, чтобы находился `references.bib`;
@@ -935,6 +948,26 @@ uv run python scripts/render_presentation_data.py \
   --wikitext-ft tex/tables/wikitext_lm_ft_compare.csv \
   --arc-ft tex/tables/arc_stopping_finetune_compare.csv \
   --out tex/presentation/presentation_data.tex
+```
+
+---
+
+## `export_arc_tex_tables.py`
+
+Строит `tex/tables/arc_stopping_base.csv` (по одной строке на семейство: лучшая по решётке) и `tex/tables/arc_stopping_finetune_compare.csv` из сводок `stopping_summary.csv` (база и `oracle_finetune`). Основные столбцы в дипломе: \(\bar\tau\), \(\mathrm{tok}_{\mathrm{best}}\), \(\mathrm{NLL}_\tau\).
+
+| Аргумент | По умолчанию | Описание |
+|----------|---------------|----------|
+| `--base-summary` | `runs/oracle_sweep_arc_agi/stopping_summary.csv` | Сводка по базовым прогонам ARC. |
+| `--finetune-summary` | `runs/oracle_sweep_arc_agi/oracle_finetune/stopping_summary.csv` | Сводка по донастройке головы оракула. |
+| `--tables-dir` | `tex/tables` | Куда писать CSV. |
+| `--legacy-ft-csv` | `tex/tables/arc_stopping_finetune_compare.csv` | Fallback для ячеек при отсутствии `stopping_eval.json`. |
+
+```bash
+uv run python scripts/export_arc_tex_tables.py \
+  --base-summary runs/oracle_sweep_arc_agi/stopping_summary.csv \
+  --finetune-summary runs/oracle_sweep_arc_agi/oracle_finetune/stopping_summary.csv \
+  --tables-dir tex/tables
 ```
 
 ## `export_wikitext_lm_tex_tables.py`

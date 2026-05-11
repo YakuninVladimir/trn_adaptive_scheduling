@@ -1,0 +1,73 @@
+% AUTO-GENERATED — do not edit by hand.
+% Source: tex/tables/wikitext_lm_base.csv, arc_stopping_base.csv,
+%          wikitext_lm_ft_compare.csv, arc_stopping_finetune_compare.csv
+% Regenerate: uv run python scripts/render_presentation_data.py
+
+\providecommand{\PresWikiTabBody}{%
+Конечное дискретное & 0,90 & 4,73 & 0,743 & 0,784 \\
+Сглаженная разметка & 0,60 & 5,00 & 0,744 & 2,083 \\
+Смесь геометрических & 0,90 & 3,12 & 0,743 & 0,825 \\
+Смесь экспоненциальных & 0,90 & 3,06 & 0,743 & 0,822 \\
+Степенной спад & 0,90 & 4,66 & 0,743 & 0,843 \\
+}
+
+\providecommand{\PresArcTabBody}{%
+Конечное дискретное & 0,90 & 3,44 & 0,730 & 1,126 \\
+Сглаженная разметка & 0,60 & 5,00 & 0,737 & 2,015 \\
+Смесь геометрических & 0,90 & 4,25 & 0,745 & 0,974 \\
+Смесь экспоненциальных & 0,80 & 3,50 & 0,742 & 1,099 \\
+Степенной спад & 0,80 & 3,71 & 0,741 & 1,125 \\
+Отрицательное биномиальное & 0,90 & 3,85 & 0,731 & 1,271 \\
+}
+
+\providecommand{\PresWikiQcXmin}{2.9061}
+\providecommand{\PresWikiQcXmax}{5.1551}
+\providecommand{\PresWikiQcYmin}{0.742898}
+\providecommand{\PresWikiQcYmax}{0.744071}
+
+\providecommand{\PresArcQcXmin}{3.3152}
+\providecommand{\PresArcQcXmax}{5.1248}
+\providecommand{\PresArcQcYmin}{0.724750}
+\providecommand{\PresArcQcYmax}{0.750250}
+
+\providecommand{\PresWikiScatter}{%
+\addplot coordinates {(4.7331,0.743315)};
+\addlegendentry{Конечное дискретное}
+\addplot coordinates {(5,0.743721)};
+\addlegendentry{Сглаженная разметка}
+\addplot coordinates {(3.1172,0.743362)};
+\addlegendentry{Смесь геометрических}
+\addplot coordinates {(3.0612,0.743312)};
+\addlegendentry{Смесь экспоненциальных}
+\addplot coordinates {(4.6641,0.743248)};
+\addlegendentry{Степенной спад}
+}
+
+\providecommand{\PresArcScatter}{%
+\addplot coordinates {(3.44,0.730000)};
+\addlegendentry{Конечное дискретное}
+\addplot coordinates {(5,0.737000)};
+\addlegendentry{Сглаженная разметка}
+\addplot coordinates {(4.25,0.745000)};
+\addlegendentry{Смесь геометрических}
+\addplot coordinates {(3.5,0.742000)};
+\addlegendentry{Смесь экспоненциальных}
+\addplot coordinates {(3.71,0.741000)};
+\addlegendentry{Степенной спад}
+\addplot coordinates {(3.85,0.731000)};
+\addlegendentry{Отрицательное биномиальное}
+}
+
+\providecommand{\PresFTtauBody}{%
+Конечное дискретное & 4,91 & 4,73 & 3,44 & 1,98 \\
+Сглаженная разметка & 8,00 & 5,00 & 5,00 & 5,00 \\
+Смесь геометрических & 8,00 & 3,12 & 4,25 & 1,74 \\
+Смесь экспоненциальных & 8,00 & 3,06 & 3,50 & 3,44 \\
+Степенной спад & 8,00 & 4,66 & 3,71 & 1,87 \\
+Отрицательное биномиальное & --- & --- & 3,85 & 2,35 \\
+}
+
+\providecommand{\PresWikiTabConclusion}{Максимальный топ-1 на контроле после дополнительного обучения головы оракула: \textbf{Сглаженная разметка} (0,744). Различия между семьями малы; подробнее --- раздел WikiText в диссертации.}
+
+\providecommand{\PresArcTabConclusion}{Максимальная токеновая точность (ARC): \textbf{Смесь геометрических} (0,745). Смесь экспоненциальных даёт сопоставимое качество при меньшем $\tau$.}
+

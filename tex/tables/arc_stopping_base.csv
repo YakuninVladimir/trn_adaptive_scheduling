@@ -1,7 +1,7 @@
 family,strategy,threshold,meantau,regret,tokbest,nlltau
-finite_discrete,cumulative_probability,0.9,3.44,0.00429,0.730,1.126
-smoothed_loss,cumulative_probability,0.6,5.00,0.00492,0.737,2.015
-mixture_geometric,cumulative_probability,0.9,4.25,0.00728,0.745,0.974
-mixture_exponential,cumulative_probability,0.8,3.50,0.01217,0.742,1.099
-power,cumulative_probability,0.8,3.71,0.02138,0.741,1.125
-negative_binomial,cumulative_probability,0.9,3.85,0.00712,0.731,1.271
+finite_discrete,cum.,0.9,3.44,0.00429,0.730,1.126
+smoothed_loss,cum.,0.6,5.00,0.00492,0.737,2.015
+mixture_geometric,cum.,0.9,4.25,0.00728,0.745,0.974
+mixture_exponential,cum.,0.8,3.50,0.01217,0.742,1.099
+power,cum.,0.8,3.71,0.02138,0.741,1.125
+negative_binomial,cum.,0.9,3.85,0.00712,0.731,1.271

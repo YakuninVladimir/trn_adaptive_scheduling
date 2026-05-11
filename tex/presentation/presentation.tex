@@ -51,6 +51,9 @@
 
 \begin{document}
 
+% Числовые блоки синхронизированы с tex/tables/*.csv через scripts/render_presentation_data.py
+\input{presentation_data.tex}
+
 % 1
 \begin{frame}[plain]
 \centering
@@ -244,18 +247,16 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \toprule
 \textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} & $\boldsymbol{NLL_\tau}$ \\
 \midrule
-Конечное дискретное & 0,85 & 3,12 & 0,331 & 1,068 \\
-Сглаженная разметка & 0,60 & 8,00 & 0,326 & 2,058 \\
-Смесь геометрических & 0,85 & 4,02 & \textbf{0,339} & \textbf{0,988} \\
-Смесь экспоненциальных & 0,75 & 3,54 & 0,336 & 1,062 \\
-Степенной спад & 0,75 & 3,66 & 0,334 & 1,089 \\
-Отрицательное биномиальное & 0,90 & 3,74 & 0,328 & 1,274 \\
+\PresWikiTabBody
 \bottomrule
 \end{tabularx}
 
-\vspace{3mm}
+\vspace{2mm}
+\smallnote{Пять строк --- как в диссертации (нет отдельного прогона \texttt{negative\_binomial} на WikiText).}
+
+\vspace{2mm}
 \begin{block}{Вывод}
-Лучший компромисс дают конечное дискретное распределение, смесь экспоненциальных и смесь геометрических. Максимальная точность — у смеси геометрических.
+\PresWikiTabConclusion
 \end{block}
 \end{frame}
 
@@ -268,25 +269,24 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
     scale only axis,
     width=0.82\paperwidth,
     height=0.58\paperheight,
-    xmin=2.85, xmax=8.35,
-    ymin=0.3252, ymax=0.3406,
-    ytick={0.326,0.328,0.330,0.332,0.334,0.336,0.338,0.340},
+    xmin=\PresWikiQcXmin,
+    xmax=\PresWikiQcXmax,
+    ymin=\PresWikiQcYmin,
+    ymax=\PresWikiQcYmax,
     xlabel={Среднее число внутренних шагов $\bar\tau$},
     ylabel={Top-1 точность},
     grid=both,
     grid style={lineGray!60},
+    legend style={font=\footnotesize},
+    legend pos=outer north east,
+    legend cell align=left,
     tick label style={font=\small},
     label style={font=\small},
     scaled ticks=false,
     yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number format/precision=3},
     every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue, fill=pointBlue},
 ]
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.12,0.331)}; \node[anchor=south west,font=\small] at (axis cs:3.12,0.331) {Конечное дискретное};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(8.00,0.326)}; \node[anchor=south east,font=\small,align=center] at (axis cs:8.00,0.326) {\shortstack{Сглаженная\\разметка}};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(4.02,0.339)}; \node[anchor=north west,font=\small] at (axis cs:4.02,0.339) {Смесь геометрических};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.54,0.336)}; \node[anchor=south west,font=\small] at (axis cs:3.54,0.336) {Смесь экспоненциальных};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.66,0.334)}; \node[anchor=north west,font=\small] at (axis cs:3.66,0.334) {Степенной спад};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.74,0.328)}; \node[anchor=south west,font=\small,align=center] at (axis cs:3.74,0.328) {\shortstack{Отрицательное\\биномиальное}};
+\PresWikiScatter
 \end{axis}
 \end{tikzpicture}
 \end{frame}
@@ -299,18 +299,13 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \toprule
 \textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} & $\boldsymbol{NLL_\tau}$ \\
 \midrule
-Конечное дискретное & 0,90 & 3,44 & 0,730 & 1,126 \\
-Сглаженная разметка & 0,60 & 5,00 & 0,737 & 2,015 \\
-Смесь геометрических & 0,90 & 4,25 & \textbf{0,745} & \textbf{0,974} \\
-Смесь экспоненциальных & 0,80 & 3,50 & 0,742 & 1,099 \\
-Степенной спад & 0,80 & 3,71 & 0,741 & 1,125 \\
-Отрицательное биномиальное & 0,90 & 3,85 & 0,731 & 1,271 \\
+\PresArcTabBody
 \bottomrule
 \end{tabularx}
 
 \vspace{3mm}
 \begin{block}{Вывод}
-Максимальная точность — у смеси геометрических. Смесь экспоненциальных близка по качеству и требует меньше шагов.
+\PresArcTabConclusion
 \end{block}
 \end{frame}
 
@@ -323,25 +318,25 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
     scale only axis,
     width=0.82\paperwidth,
     height=0.58\paperheight,
-    xmin=3.32, xmax=5.18,
-    ymin=0.7282, ymax=0.7468,
+    xmin=\PresArcQcXmin,
+    xmax=\PresArcQcXmax,
+    ymin=\PresArcQcYmin,
+    ymax=\PresArcQcYmax,
     ytick={0.730,0.735,0.740,0.745},
     xlabel={Среднее число внутренних шагов $\bar\tau$},
     ylabel={Токеновая точность},
     grid=both,
     grid style={lineGray!60},
+    legend style={font=\footnotesize},
+    legend pos=outer north east,
+    legend cell align=left,
     tick label style={font=\small},
     label style={font=\small},
     scaled ticks=false,
     yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number format/precision=3},
     every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue, fill=pointBlue},
 ]
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.44,0.730)}; \node[anchor=north west,font=\small] at (axis cs:3.44,0.730) {Конечное дискретное};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(5.00,0.737)}; \node[anchor=south east,font=\small,align=center] at (axis cs:5.00,0.737) {\shortstack{Сглаженная\\разметка}};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(4.25,0.745)}; \node[anchor=north west,font=\small,align=center] at (axis cs:4.25,0.745) {\shortstack{Смесь\\геометрических}};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.50,0.742)}; \node[anchor=south west,font=\small] at (axis cs:3.50,0.742) {Смесь экспоненциальных};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.71,0.741)}; \node[anchor=north west,font=\small] at (axis cs:3.71,0.741) {Степенной спад};
-\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.85,0.731)}; \node[anchor=south west,font=\small,align=center] at (axis cs:3.85,0.731) {\shortstack{Отрицательное\\биномиальное}};
+\PresArcScatter
 \end{axis}
 \end{tikzpicture}
 \end{frame}
@@ -349,23 +344,22 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 % 12
 \begin{frame}{11. Дообучение головы оракула}
 \small
-\renewcommand{\arraystretch}{1.18}
+\renewcommand{\arraystretch}{1.15}
 \begin{tabularx}{\textwidth}{@{}Y C{17mm} C{17mm} C{17mm} C{17mm}@{}}
 \toprule
 \multirow{2}{*}{\textbf{Семейство}} & \multicolumn{2}{c}{\textbf{WikiText-103: $\bar\tau$}} & \multicolumn{2}{c}{\textbf{ARC-AGI: $\bar\tau$}} \\
 \cmidrule(lr){2-3}\cmidrule(lr){4-5}
 & до & после & до & после \\
 \midrule
-Конечное дискретное & 3,12 & 1,79 & 3,44 & 1,98 \\
-Смесь геометрических & 4,02 & 1,71 & 4,25 & 1,74 \\
-Степенной спад & 3,66 & 1,94 & 3,71 & 1,87 \\
-Отрицательное биномиальное & 3,74 & 2,41 & 3,85 & 2,35 \\
+\PresFTtauBody
 \bottomrule
 \end{tabularx}
 
-\vspace{3mm}
+\vspace{2mm}
+\smallnote{WikiText («до»): при отсутствии корневого \texttt{stopping\_eval.json} базовые столбцы проксируются из последнего полного прохода (см. \texttt{export\_wikitext\_lm\_tex\_tables.py}); для строки \texttt{finite\_discrete} --- из полного решётничного файла.}
+\vspace{2mm}
 \begin{block}{Вывод}
-Дообучение головы оракула часто уменьшает среднюю глубину при малом изменении точности. Отрицательное биномиальное семейство оказалось более чувствительным.
+Дообучение головы оракула снижает среднюю глубину; на ARC часто сохраняется высокое качество (\texttt{arc\_stopping\_finetune\_compare.csv}).
 \end{block}
 \end{frame}
 

@@ -1,6 +1,6 @@
 family,strategy,threshold,meantau,tokbest,top5best,nlltau
 finite_discrete,hazard,0.9,4.733073,0.743315,0.591788,0.784137
-smoothed_loss,cumulative_probability,0.6,5.0,0.743721,0.59168,2.08307
-mixture_geometric,cumulative_probability,0.9,3.117188,0.743362,0.591416,0.824911
-mixture_exponential,cumulative_probability,0.9,3.061198,0.743312,0.591369,0.821896
+smoothed_loss,cum.,0.6,5.0,0.743721,0.59168,2.08307
+mixture_geometric,cum.,0.9,3.117188,0.743362,0.591416,0.824911
+mixture_exponential,cum.,0.9,3.061198,0.743312,0.591369,0.821896
 power,hazard,0.9,4.664062,0.743248,0.591701,0.84308

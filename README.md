@@ -86,10 +86,10 @@ uv run diplom-train --config configs/text_wikitext103_trm_oracle.yaml
 # TRM без oracle с фиксированными итерациями
 uv run diplom-train --config configs/text_wikitext103_trm_fixed.yaml
 
-# Frozen small LLM -> TRM correction module
+# Frozen Falcon-H1-Tiny -> TRM correction module (`task.train_fraction: 0.1`)
 uv run diplom-train --config configs/text_qwen_correction_trm.yaml
 
-# LoRA ablation (сопоставимый по размеру baseline)
+# LoRA ablation (Falcon; `task.train_fraction: 0.1`)
 uv run diplom-train --config configs/text_qwen_lora_ablation.yaml
 ```
 

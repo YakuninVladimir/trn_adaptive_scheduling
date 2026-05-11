@@ -169,4 +169,4 @@ Current training uses exactly **one** selected family per run:
 - `oracle_distribution_model` picks one head/loss path.
 - Other heads are present in the class but not jointly optimized unless explicitly selected in another run.
 
-So fair model comparison currently means **separate train runs** per family (configs in `configs/oracle_sweep_wikitext/` and `configs/oracle_sweep_arc_agi/`).
+So fair model comparison currently means **separate train runs** per family (configs in `configs/oracle_sweep_wikitext/` — WikiText использует **frozen Falcon + `frozen_llm_trm_oracle`**, `task.train_fraction: 0.1`, см. `runs/oracle_sweep_wikitext_falcon/`, — и `configs/oracle_sweep_arc_agi/`).

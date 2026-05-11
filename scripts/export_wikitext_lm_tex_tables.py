@@ -22,6 +22,14 @@ _augment_policy_metrics = _mod._augment_policy_metrics
 _best_record = _mod._best_record
 
 
+def _strategy_for_tex_table(s: Any) -> str:
+    """Короткие имена стратегий в TeX-таблицах (колонка не перекрывает порог)."""
+    k = str(s).strip()
+    return {
+        "cumulative_probability": "cum.",
+    }.get(k, k)
+
+
 def _policy_label(strategy: str, threshold: str, budget: str) -> str:
     s = (strategy or "").strip() or "?"
     th = str(threshold).strip()
@@ -76,7 +84,7 @@ def main() -> None:
     base_rows = pd.DataFrame(
         {
             "family": src["trained_distribution_model"],
-            "strategy": src["best_strategy"],
+            "strategy": src["best_strategy"].map(_strategy_for_tex_table),
             "threshold": src["best_threshold"],
             "meantau": pd.to_numeric(src["best_mean_steps"], errors="coerce"),
             "tokbest": pd.to_numeric(src[tok_col], errors="coerce"),
@@ -107,10 +115,18 @@ def main() -> None:
         base_eval = run_dir / "stopping_eval.json"
         best_b = _best_from_eval_json(base_eval, fam, metric, "max")
         if best_b is None:
-            policy_b = leg.get("policybase", "")
-            tok_b = leg.get("tokbase", "")
-            tau_b = leg.get("taubase", "")
-            top5_b = leg.get("top5base", "") or "---"
+            # Нет корневого stopping_eval.json (частый случай, если сохранён только oracle_finetune):
+            # прокси «до» без отдельного перебора на базовом чекпоинте — из строки oracle_finetune-сводки.
+            policy_b = "—"
+            lsm = pd.to_numeric(r.get("last_step_mean_steps"), errors="coerce")
+            tau_b = f"{float(lsm):.2f}" if pd.notna(lsm) and float(lsm) > 0 else (leg.get("taubase", "") or "")
+            btl = pd.to_numeric(r.get("best_token_acc_last"), errors="coerce")
+            tok_b = f"{float(btl):.3f}" if pd.notna(btl) else leg.get("tokbase", "")
+            b5l = pd.to_numeric(r.get("best_top5_acc_last"), errors="coerce")
+            if pd.notna(b5l):
+                top5_b = f"{float(b5l):.3f}"
+            else:
+                top5_b = leg.get("top5base", "") or "---"
         else:
             policy_b = _policy_label(
                 str(best_b.get("strategy", "")),

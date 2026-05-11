@@ -15,7 +15,7 @@
 }%
 \newcommand{\ArcFtRows}{}%
 \DTLforeach*{arcft}{\ZcA=family,\ZcB=policybase,\ZcC=policyft,\ZcD=tokbase,\ZcE=tokft,\ZcF=taubase,\ZcG=tauft}{%
-  \csname protected@edef\endcsname\DTtabrow{\noexpand\DTLkeycell{\ZcA} & \ZcB & \ZcC & \noexpand\num{\ZcD} & \noexpand\num{\ZcE} & \noexpand\num{\ZcF} & \noexpand\num{\ZcG}\noexpand\\\noexpand\hline}%
+  \csname protected@edef\endcsname\DTtabrow{\noexpand\DTLkeycell{\ZcA} & \ZcB & \ZcC & \noexpand\DTLtabnum{\ZcD} & \noexpand\DTLtabnum{\ZcE} & \noexpand\DTLtabnum{\ZcF} & \noexpand\DTLtabnum{\ZcG}\noexpand\\\noexpand\hline}%
   \expandafter\appto\expandafter\ArcFtRows\expandafter{\DTtabrow}%
 }%
 

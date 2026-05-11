@@ -28,7 +28,8 @@
 \setbeamertemplate{itemize item}{\color{msuBlue}$\blacktriangleright$}
 \setbeamertemplate{itemize subitem}{\color{msuBlue}$\circ$}
 \setbeamertemplate{footline}{}
-\setbeamertemplate{headline}{\vspace{1mm}\hspace{5mm}\color{lineGray}\rule{\dimexpr\paperwidth-10mm}{0.4pt}\vspace{-1mm}}
+\setbeamertemplate{headline}{\vspace{1mm}\hspace{5mm}\color{lineGray}\rule{\dimexpr\paperwidth-10mm}
+{0.4pt}\vspace{-1mm}}
 
 \setbeamercolor{normal text}{fg=textDark,bg=white}
 \setbeamercolor{frametitle}{fg=msuBlue,bg=white}
@@ -60,7 +61,8 @@
 \vspace{1mm}
 {\color{msuBlue}\rule{0.80\paperwidth}{0.7pt}}\par
 \vspace{5mm}
-{\color{msuBlue}\bfseries\fontsize{21}{25}\selectfont Поиск оптимального критерия\\[1mm] остановки итеративной процедуры}\par
+{\color{msuBlue}\bfseries\fontsize{21}{25}\selectfont Поиск оптимального критерия\\[1mm] остановки
+итеративной процедуры}\par
 \vspace{4mm}
 {\color{msuBlue}\rule{16mm}{1.0pt}}\par
 \vspace{4mm}
@@ -79,23 +81,30 @@
 % 2
 \begin{frame}{1. Задача в простых словах}
 \begin{block}{Что нужно сделать}
-Для каждой позиции текста выбрать, сколько внутренних уточнений выполнить перед выдачей прогноза следующего токена.
+Для каждой позиции текста выбрать, сколько внутренних уточнений выполнить перед выдачей прогноза
+следующего токена.
 \end{block}
 
 \vspace{2mm}
 \begin{columns}[T,onlytextwidth]
 \begin{column}{0.53\textwidth}
 \small
-\term{Оракул} — лучший шаг, выбранный постфактум: известны правильный ответ и потери на всех шагах.\par\vspace{2mm}
-\term{Время остановки} — номер внутреннего шага, на котором рекурсивная процедура прекращается.\par\vspace{2mm}
+\term{Оракул} — лучший шаг, выбранный постфактум: известны правильный ответ и потери на всех
+шагах.\par\vspace{2mm}
+\term{Время остановки} — номер внутреннего шага, на котором рекурсивная процедура
+прекращается.\par\vspace{2mm}
 \term{Оптимальность} — минимум суммы ошибки прогноза и штрафа за вычисления.
 \end{column}
 \begin{column}{0.42\textwidth}
 \begin{tikzpicture}[node distance=5mm, every node/.style={font=\small}]
-\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm] (a) {префикс текста};
-\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of a] (b) {внутренние шаги};
-\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of b] (c) {распределение времени};
-\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of c] (d) {правило остановки};
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm] (a)
+{префикс текста};
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of a]
+(b) {внутренние шаги};
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of b]
+(c) {распределение времени};
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of c]
+(d) {правило остановки};
 \draw[-{Latex[length=2mm]},thick,color=msuBlue] (a)--(b);
 \draw[-{Latex[length=2mm]},thick,color=msuBlue] (b)--(c);
 \draw[-{Latex[length=2mm]},thick,color=msuBlue] (c)--(d);
@@ -111,16 +120,21 @@
 \toprule
 \textbf{Направление} & \textbf{Что дает для постановки} \\
 \midrule
-Последовательный анализ и оптимальная остановка & язык риска, остановки и сравнения правил: Вальд, Снелл, Ширяев.\\[1mm]
-Статистическая теория решений & разделяет прогноз неизвестной величины и действие, принимаемое по прогнозу.\\[1mm]
-Адаптивная глубина и ранний выход нейросетей & показывают, что вычисления можно тратить неравномерно, но часто используют эвристику уверенности.\\[1mm]
-Малые рекурсивные модели & дают механизм многократного уточнения скрытого состояния одним рекурсивным ядром.\\
+Последовательный анализ и оптимальная остановка & язык риска, остановки и сравнения правил: Вальд,
+Снелл, Ширяев.\\[1mm]
+Статистическая теория решений & разделяет прогноз неизвестной величины и действие, принимаемое по
+прогнозу.\\[1mm]
+Адаптивная глубина и ранний выход нейросетей & показывают, что вычисления можно тратить
+неравномерно, но часто используют эвристику уверенности.\\[1mm]
+Малые рекурсивные модели & дают механизм многократного уточнения скрытого состояния одним
+рекурсивным ядром.\\
 \bottomrule
 \end{tabularx}
 
 \vspace{4mm}
 \vspace{2mm}
-\smallnote{Разрыв: вместо прямой эвристики остановки оценивается полный закон оракульного времени, а правило строится поверх него.}
+\smallnote{Разрыв: вместо прямой эвристики остановки оценивается полный закон оракульного времени,
+а правило строится поверх него.}
 \end{frame}
 
 % 4
@@ -137,7 +151,8 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \tau_t^\star=\arg\min_{0\le j\le K}\{L_{t,j}+\lambda c(j)\}.
 \]
 \vspace{-1mm}
-\smallnote{Метка вычисляется только при обучении: нужен правильный следующий токен и вся траектория шагов.}
+\smallnote{Метка вычисляется только при обучении: нужен правильный следующий токен и вся
+траектория шагов.}
 \end{block}
 \end{column}
 \begin{column}{0.43\textwidth}
@@ -155,9 +170,12 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \vspace{2mm}
 \centering
 \begin{tikzpicture}[every node/.style={font=\small}, node distance=4mm]
-\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm] (p) {прошлое: $j<k$};
-\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm,right=of p] (n) {сейчас: $j=k$};
-\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm,right=of n] (f) {будущее: $j>k$};
+\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm] (p)
+{прошлое: $j<k$};
+\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm,right=of p]
+(n) {сейчас: $j=k$};
+\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm,right=of n]
+(f) {будущее: $j>k$};
 \end{tikzpicture}
 \end{frame}
 
@@ -186,7 +204,8 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \end{columns}
 
 \vspace{3mm}
-\smallnote{Преимущество: правило использует массу вероятности на прошлом, текущем и будущем оптимуме, а не одну эвристику уверенности.}
+\smallnote{Преимущество: правило использует массу вероятности на прошлом, текущем и будущем
+оптимуме, а не одну эвристику уверенности.}
 \end{frame}
 
 % 6
@@ -236,7 +255,8 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \end{enumerate}
 
 \vspace{2mm}
-\smallnote{Метрики: $\bar\tau$ — среднее число шагов; $\textit{tokbest}$ — точность; $NLL_\tau$ — качество прогноза времени.}
+\smallnote{Метрики: $\bar\tau$ — среднее число шагов; $\textit{tokbest}$ — точность; $NLL_\tau$ —
+качество прогноза времени.}
 \end{frame}
 
 % 8
@@ -245,14 +265,16 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \renewcommand{\arraystretch}{1.18}
 \begin{tabularx}{\textwidth}{@{}Y C{14mm} C{15mm} C{16mm} C{15mm}@{}}
 \toprule
-\textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} & $\boldsymbol{NLL_\tau}$ \\
+\textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} &
+$\boldsymbol{NLL_\tau}$ \\
 \midrule
 \PresWikiTabBody
 \bottomrule
 \end{tabularx}
 
 \vspace{2mm}
-\smallnote{Пять строк --- как в диссертации (нет отдельного прогона \texttt{negative\_binomial} на WikiText).}
+\smallnote{Пять строк --- как в диссертации (нет отдельного прогона \texttt{negative\_binomial} на
+WikiText).}
 
 \vspace{2mm}
 \begin{block}{Вывод}
@@ -283,8 +305,10 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
     tick label style={font=\small},
     label style={font=\small},
     scaled ticks=false,
-    yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number format/precision=3},
-    every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue, fill=pointBlue},
+    yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number
+    format/precision=3},
+    every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue,
+    fill=pointBlue},
 ]
 \PresWikiScatter
 \end{axis}
@@ -297,7 +321,8 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \renewcommand{\arraystretch}{1.18}
 \begin{tabularx}{\textwidth}{@{}Y C{14mm} C{15mm} C{16mm} C{15mm}@{}}
 \toprule
-\textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} & $\boldsymbol{NLL_\tau}$ \\
+\textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} &
+$\boldsymbol{NLL_\tau}$ \\
 \midrule
 \PresArcTabBody
 \bottomrule
@@ -333,8 +358,10 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
     tick label style={font=\small},
     label style={font=\small},
     scaled ticks=false,
-    yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number format/precision=3},
-    every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue, fill=pointBlue},
+    yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number
+    format/precision=3},
+    every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue,
+    fill=pointBlue},
 ]
 \PresArcScatter
 \end{axis}
@@ -347,7 +374,8 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \renewcommand{\arraystretch}{1.15}
 \begin{tabularx}{\textwidth}{@{}Y C{17mm} C{17mm} C{17mm} C{17mm}@{}}
 \toprule
-\multirow{2}{*}{\textbf{Семейство}} & \multicolumn{2}{c}{\textbf{WikiText-103: $\bar\tau$}} & \multicolumn{2}{c}{\textbf{ARC-AGI: $\bar\tau$}} \\
+\multirow{2}{*}{\textbf{Семейство}} & \multicolumn{2}{c}{\textbf{WikiText-103: $\bar\tau$}} &
+\multicolumn{2}{c}{\textbf{ARC-AGI: $\bar\tau$}} \\
 \cmidrule(lr){2-3}\cmidrule(lr){4-5}
 & до & после & до & после \\
 \midrule
@@ -356,17 +384,20 @@ L_{t,k}=-\log Q_{t,k}(X_{t+1}),
 \end{tabularx}
 
 \vspace{2mm}
-\smallnote{WikiText («до»): при отсутствии корневого \texttt{stopping\_eval.json} базовые столбцы проксируются из последнего полного прохода (см. \texttt{export\_wikitext\_lm\_tex\_tables.py}); для строки \texttt{finite\_discrete} --- из полного решётничного файла.}
+\smallnote{Примечание: для части строк в столбце «до» по WikiText при отсутствии полной базовой
+сводки на контроле могут использоваться значения из последнего полного прохода обучения.}
 \vspace{2mm}
 \begin{block}{Вывод}
-Дообучение головы оракула снижает среднюю глубину; на ARC часто сохраняется высокое качество (\texttt{arc\_stopping\_finetune\_compare.csv}).
+Дообучение головы оракула снижает среднюю глубину; на ARC часто сохраняется высокое качество по
+тем же таблицам сравнения, что и в основном тексте.
 \end{block}
 \end{frame}
 
 % 13
 \begin{frame}{12. Итог}
 \begin{block}{Результат работы}
-Сначала оценивается распределение оракульного времени, затем по нему выбирается реализуемый шаг остановки.
+Сначала оценивается распределение оракульного времени, затем по нему выбирается реализуемый шаг
+остановки.
 \end{block}
 
 \vspace{2mm}

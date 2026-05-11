@@ -38,18 +38,23 @@ def build_parser() -> ArgumentParser:
         "--honest-split-ratio",
         type=float,
         default=0.0,
-        help="Calibration/evaluation split ratio for honest threshold selection (0 disables, e.g. 0.5).",
+        help="Fraction of validation used to select threshold/strategy before scoring the remainder (0 disables, e.g. 0.5).",
     )
     p.add_argument(
         "--selection-metric",
         default="token_acc",
-        help="Metric used to select threshold/strategy on calibration split.",
+        help="Metric for selecting threshold/strategy on the holdout portion of validation.",
     )
     p.add_argument(
         "--selection-mode",
         default="max",
         choices=["min", "max"],
         help="Optimization mode for --selection-metric.",
+    )
+    p.add_argument(
+        "--answer-policies",
+        default="last,argmax_interval",
+        help="Comma-separated answer policies for metric calculation (e.g. last,argmax_interval).",
     )
     p.add_argument(
         "--progress-bar",
@@ -77,6 +82,7 @@ def main() -> None:
         honest_split_ratio=args.honest_split_ratio,
         selection_metric=args.selection_metric,
         selection_mode=args.selection_mode,
+        answer_policies=args.answer_policies,
         progress_bar=args.progress_bar,
     )
     print(json.dumps(res, ensure_ascii=False))

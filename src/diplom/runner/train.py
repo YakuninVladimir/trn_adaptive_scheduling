@@ -121,6 +121,24 @@ def _per_sample_token_ce(
     return (ce * m * w).sum(dim=1) / denom
 
 
+def _per_sample_token_acc(
+    logits: torch.Tensor,
+    y: torch.Tensor,
+    y_mask: torch.Tensor | None,
+    y_weight: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Per-sample masked token accuracy for token tasks. logits: [B,L,V], y: [B,L]. Returns [B]."""
+    B, L, V = logits.shape
+    pred = logits.argmax(dim=-1)
+    ok = pred.eq(y).float()
+    if y_mask is None:
+        return ok.mean(dim=1)
+    m = y_mask.float()
+    w = y_weight.float() if y_weight is not None else torch.ones_like(m)
+    denom = (m * w).sum(dim=1).clamp_min(1.0)
+    return (ok * m * w).sum(dim=1) / denom
+
+
 def train_from_yaml(
     config_path: str,
     init_checkpoint: str | None = None,
@@ -272,6 +290,7 @@ def train_from_yaml(
             used_sup = 0
             aux_hist: list[torch.Tensor] = []
             per_step_psloss: list[torch.Tensor] = []
+            per_step_acc: list[torch.Tensor] = []
             dump_every = max(int(exp.train.dump_oracle_trace_every), 1)
             dump_cap = exp.train.dump_oracle_trace_max_batches
             _tr = oracle_trace_state or {}
@@ -380,6 +399,7 @@ def train_from_yaml(
                         halt_trace.append(hp.detach().cpu() if isinstance(hp, torch.Tensor) else None)
                 if y.dim() == 2 and out.logits.dim() == 3:
                     per_step_psloss.append(_per_sample_token_ce(out.logits.detach(), y, y_mask, y_weight))
+                    per_step_acc.append(_per_sample_token_acc(out.logits.detach(), y, y_mask, y_weight))
                 if out.state is not None:
                     if isinstance(out.state, tuple):
                         state = tuple(s.detach() for s in out.state)
@@ -402,13 +422,15 @@ def train_from_yaml(
 
             # Oracle-step training: full rollout already done, now train
             # prefix-conditioned oracle on future deltas.
-            if has_oracle_head and aux_hist and per_step_psloss:
+            if has_oracle_head and aux_hist and per_step_psloss and len(per_step_acc) == len(per_step_psloss):
                 with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
                     aux_history = torch.stack(aux_hist, dim=1)
                     per_step = torch.stack(per_step_psloss, dim=0)
+                    acc_step = torch.stack(per_step_acc, dim=0)
                     oracle_loss = model.oracle_loss_from_rollout(
                         aux_history.detach(),
                         per_step.detach(),
+                        per_step_acc=acc_step.detach(),
                     )
                     weighted_oracle = oracle_loss * float(getattr(model.cfg_oracle, "oracle_loss_weight", 1.0))
 

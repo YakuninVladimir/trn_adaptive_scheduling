@@ -88,6 +88,194 @@ def _dedupe_last_by_step(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [by_step[s] for s in sorted(by_step.keys()) if s >= 0]
 
 
+def _load_train_val_rows(run_path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    metrics_path = run_path / "metrics.jsonl"
+    if not metrics_path.exists():
+        raise FileNotFoundError(f"metrics.jsonl not found: {metrics_path}")
+    train_rows: list[dict[str, Any]] = []
+    val_rows: list[dict[str, Any]] = []
+    with metrics_path.open("r") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            if rec.get("kind") == "train":
+                train_rows.append(rec)
+            elif rec.get("kind") == "val":
+                val_rows.append(rec)
+    if not train_rows and not val_rows:
+        raise RuntimeError(f"No records found in {metrics_path}")
+    return _dedupe_last_by_step(train_rows), _dedupe_last_by_step(val_rows)
+
+
+def _metric_key_excluded(key: str, exclude: tuple[str, ...]) -> bool:
+    kl = key.lower()
+    return any(ex in kl for ex in exclude)
+
+
+def plot_training_panels(
+    run_dir: str,
+    *,
+    out_loss: str | None = None,
+    out_val_acc: str | None = None,
+    out_val_loss: str | None = None,
+    ema_band: bool = True,
+    ema_alpha: float = 0.06,
+    val_ema_alpha: float = 0.35,
+    std_window: int = 25,
+    std_sigma: float = 1.0,
+    dpi: int = 150,
+    exclude_metric_keys: tuple[str, ...] = ("exact_acc",),
+) -> None:
+    """Save training loss and/or separate val accuracy / val loss figures (single y-axis each)."""
+    run_path = Path(run_dir)
+    train_rows, val_rows = _load_train_val_rows(run_path)
+    has_val = bool(val_rows)
+    loss_like_tokens = ("loss", "mae", "mse", "nll", "brier", "ece", "regret")
+
+    if out_loss:
+        fig, ax = plt.subplots(1, 1, figsize=(11, 3.6))
+        steps = [r["step"] for r in train_rows]
+        total_loss = [r.get("loss") for r in train_rows]
+        main_loss = [r.get("main_loss") for r in train_rows]
+        _plot_series_ema_band(
+            ax,
+            steps,
+            main_loss,
+            color="tab:blue",
+            label="train_main_loss",
+            ema_alpha=ema_alpha,
+            std_window=std_window,
+            std_sigma=std_sigma,
+            enabled=ema_band,
+        )
+        if any(v is not None for v in total_loss):
+            if ema_band:
+                _plot_series_ema_band(
+                    ax,
+                    steps,
+                    total_loss,
+                    color="tab:gray",
+                    label="train_loss_total",
+                    linestyle="-",
+                    raw_alpha=0.25,
+                    ema_alpha=ema_alpha,
+                    std_window=std_window,
+                    std_sigma=std_sigma,
+                    enabled=True,
+                )
+            else:
+                ax.plot(steps, total_loss, label="train_loss_total", color="tab:gray", alpha=0.5)
+        ax.set_ylabel("main loss")
+        ax.set_xlabel("global step")
+        ax.legend(loc="upper left")
+        ax.grid(True, alpha=0.3)
+        ax.set_title(str(run_path))
+        fig.tight_layout()
+        p = Path(out_loss)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fig.savefig(p, dpi=dpi)
+            print(f"[plot] saved -> {p}")
+        finally:
+            plt.close(fig)
+
+    if out_val_acc or out_val_loss:
+        if not has_val:
+            raise RuntimeError(f"No val rows for val panels: {run_path / 'metrics.jsonl'}")
+        v_steps = [r["step"] for r in val_rows]
+        val_win = max(3, min(std_window, max(2, len(v_steps) // 3)))
+        all_val_keys = sorted({k for r in val_rows for k in r.keys()} - {"kind", "epoch", "step"})
+        val_acc_keys = [
+            k
+            for k in all_val_keys
+            if not any(tok in k.lower() for tok in loss_like_tokens) and not _metric_key_excluded(k, exclude_metric_keys)
+        ]
+        val_loss_keys = [
+            k
+            for k in all_val_keys
+            if any(tok in k.lower() for tok in loss_like_tokens) and not _metric_key_excluded(k, exclude_metric_keys)
+        ]
+
+    if out_val_acc:
+        fig, ax = plt.subplots(1, 1, figsize=(11, 3.6))
+        for i, k in enumerate(val_acc_keys):
+            vals = [r.get(k) for r in val_rows]
+            _plot_series_ema_band(
+                ax,
+                v_steps,
+                vals,
+                color=f"C{i % 10}",
+                label=f"val_{k}",
+                ema_alpha=val_ema_alpha,
+                std_window=val_win,
+                std_sigma=std_sigma,
+                enabled=ema_band,
+            )
+        t_steps = [r["step"] for r in train_rows]
+        train_acc_keys = sorted(
+            kk
+            for kk in {k2 for r in train_rows for k2 in r.keys()}
+            if kk.endswith("_acc") and not _metric_key_excluded(kk, exclude_metric_keys)
+        )
+        for i, k in enumerate(train_acc_keys):
+            vals = [r.get(k) for r in train_rows]
+            _plot_series_ema_band(
+                ax,
+                t_steps,
+                vals,
+                color=f"C{(i + len(val_acc_keys)) % 10}",
+                label=f"train_{k}",
+                linestyle="--",
+                ema_alpha=ema_alpha,
+                std_window=std_window,
+                std_sigma=std_sigma,
+                enabled=ema_band,
+            )
+        ax.legend(loc="upper left")
+        ax.set_ylabel("token accuracy")
+        ax.set_xlabel("global step")
+        ax.grid(True, alpha=0.3)
+        ax.set_title(str(run_path))
+        fig.tight_layout()
+        p = Path(out_val_acc)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fig.savefig(p, dpi=dpi)
+            print(f"[plot] saved -> {p}")
+        finally:
+            plt.close(fig)
+
+    if out_val_loss:
+        fig, ax = plt.subplots(1, 1, figsize=(11, 3.6))
+        for i, k in enumerate(val_loss_keys):
+            vals = [r.get(k) for r in val_rows]
+            _plot_series_ema_band(
+                ax,
+                v_steps,
+                vals,
+                color=f"C{i % 10}",
+                label=f"val_{k}",
+                ema_alpha=val_ema_alpha,
+                std_window=val_win,
+                std_sigma=std_sigma,
+                enabled=ema_band,
+            )
+        ax.legend(loc="upper right")
+        ax.set_ylabel("validation loss")
+        ax.set_xlabel("global step")
+        ax.grid(True, alpha=0.3)
+        ax.set_title(str(run_path))
+        fig.tight_layout()
+        p = Path(out_val_loss)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fig.savefig(p, dpi=dpi)
+            print(f"[plot] saved -> {p}")
+        finally:
+            plt.close(fig)
+
+
 def plot_run(
     run_dir: str,
     out_path: str | None = None,
@@ -100,27 +288,7 @@ def plot_run(
     std_sigma: float = 1.0,
 ) -> None:
     run_path = Path(run_dir)
-    metrics_path = run_path / "metrics.jsonl"
-    if not metrics_path.exists():
-        raise FileNotFoundError(f"metrics.jsonl not found: {metrics_path}")
-
-    train_rows: list[dict[str, Any]] = []
-    val_rows: list[dict[str, Any]] = []
-    with metrics_path.open("r") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            if rec.get("kind") == "train":
-                train_rows.append(rec)
-            elif rec.get("kind") == "val":
-                val_rows.append(rec)
-
-    if not train_rows and not val_rows:
-        raise RuntimeError(f"No records found in {metrics_path}")
-
-    train_rows = _dedupe_last_by_step(train_rows)
-    val_rows = _dedupe_last_by_step(val_rows)
+    train_rows, val_rows = _load_train_val_rows(run_path)
 
     has_val = bool(val_rows)
     nrows = 4 if has_val else 3

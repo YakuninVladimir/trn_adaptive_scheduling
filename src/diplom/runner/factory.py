@@ -6,7 +6,14 @@ from typing import Any, TypeVar
 import torch
 
 from diplom.models.hrm import HRM, HRMConfig
-from diplom.models.text_correction import FrozenLLMTRM, FrozenLLMTRMConfig, LoRATextLM, LoRATextLMConfig
+from diplom.models.text_correction import (
+    FrozenLLMTRM,
+    FrozenLLMTRMConfig,
+    FrozenLLMTRMOracle,
+    FrozenLLMTRMOracleConfig,
+    LoRATextLM,
+    LoRATextLMConfig,
+)
 from diplom.models.trm import TRM, TRMConfig
 from diplom.models.trm_oracle import TRMOracle, TRMOracleConfig
 from diplom.runner.tasks.arc_agi_task import ArcAgiTask, ArcAgiTaskConfig
@@ -61,6 +68,9 @@ def build_model(model_raw: dict[str, Any]) -> torch.nn.Module:
     if name in ("trm_oracle", "trm-lookahead"):
         cfg = TRMOracleConfig(**_filter_kwargs(TRMOracleConfig, model_raw))
         return TRMOracle(cfg)
+    if name in ("frozen_llm_trm_oracle",):
+        cfg = FrozenLLMTRMOracleConfig(**_filter_kwargs(FrozenLLMTRMOracleConfig, model_raw))
+        return FrozenLLMTRMOracle(cfg)
     if name in ("frozen_llm_trm", "trm_correction"):
         cfg = FrozenLLMTRMConfig(**_filter_kwargs(FrozenLLMTRMConfig, model_raw))
         return FrozenLLMTRM(cfg)

@@ -133,12 +133,17 @@ class TextLMTask:
         y = batch.y.to(logits.device)
         pred = torch.argmax(logits, dim=-1)
         correct = (pred == y)
+        topk = min(5, logits.size(-1))
+        topk_idx = torch.topk(logits, k=topk, dim=-1).indices
+        top5_correct = (topk_idx == y.unsqueeze(-1)).any(dim=-1)
         if batch.y_mask is not None:
             mask = batch.y_mask.to(logits.device)
             acc = (correct & mask).sum().float() / mask.sum().float().clamp_min(1.0)
+            top5_acc = (top5_correct & mask).sum().float() / mask.sum().float().clamp_min(1.0)
         else:
             acc = correct.float().mean()
-        return {"token_acc": float(acc.item())}
+            top5_acc = top5_correct.float().mean()
+        return {"token_acc": float(acc.item()), "top5_acc": float(top5_acc.item())}
 
     def halt_targets(self, logits: torch.Tensor, batch: TaskBatch) -> torch.Tensor | None:
         _ = logits, batch

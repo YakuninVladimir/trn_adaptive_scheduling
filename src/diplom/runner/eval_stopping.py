@@ -10,7 +10,7 @@ from diplom.models.trm_oracle import oracle_history_tensor_from_output
 from diplom.runner.config import load_experiment_config
 from diplom.runner.factory import build_model, build_scheduler, build_task, resolve_device
 from diplom.runner.stopping import apply_stopping_strategy
-from diplom.runner.train import _per_sample_token_ce, _resolve_amp_dtype
+from diplom.runner.train import _per_sample_token_acc, _per_sample_token_ce, _resolve_amp_dtype
 from diplom.schedulers.base import SchedulerState
 
 
@@ -65,6 +65,21 @@ def _aggregate_records(records: list[dict]) -> list[dict]:
     return out
 
 
+def _apply_budget_constraint(records: list[dict], eps: float = 1e-9) -> list[dict]:
+    out: list[dict] = []
+    for r in records:
+        if str(r.get("strategy", "")).lower() != "budget":
+            out.append(r)
+            continue
+        b = r.get("budget", None)
+        ms = r.get("mean_steps", None)
+        if b is None or ms is None:
+            continue
+        if float(ms) <= float(b) + float(eps):
+            out.append(r)
+    return out
+
+
 def _pick_best_record(records: list[dict], metric: str, mode: str) -> dict | None:
     vals = []
     for r in records:
@@ -77,6 +92,112 @@ def _pick_best_record(records: list[dict], metric: str, mode: str) -> dict | Non
     if str(mode).lower() == "min":
         return min(vals, key=lambda x: x[1])[0]
     return max(vals, key=lambda x: x[1])[0]
+
+
+def _choose_answer_step(stop_step: int, pmf_at_stop: torch.Tensor, policy: str) -> int:
+    s = max(int(stop_step), 1)
+    pol = str(policy).strip().lower()
+    if pol == "last":
+        return s
+    if pol in ("argmax_interval", "argmax_on_interval"):
+        end = min(s, int(pmf_at_stop.numel()))
+        if end <= 0:
+            return s
+        idx = int(torch.argmax(pmf_at_stop[:end]).item())
+        return idx + 1
+    raise ValueError(f"Unknown answer policy: {policy}")
+
+
+def _micro_pooled_token_acc_for_answer_policy(
+    *,
+    stop_steps: list[int],
+    pmf_per_k: list[torch.Tensor],
+    logits_hist: list[torch.Tensor],
+    batch_on_device,
+    answer_policy: str,
+) -> float:
+    """
+    Batch-level token_acc with the same pooling semantics as ``task.compute_metrics(..., full_batch)``:
+    sum of correct masked tokens / sum of mask counts, allowing a different answer step per sample.
+    Aligns strategy columns ``token_acc_*`` with ``last_step_metrics['token_acc']`` (per-batch convention).
+    """
+    pol = str(answer_policy).strip().lower()
+    B = len(stop_steps)
+    correct = 0
+    denom = 0
+    for b, s in enumerate(stop_steps):
+        pmf_at_stop = pmf_per_k[s - 1][b]
+        ans_step = _choose_answer_step(s, pmf_at_stop, pol)
+        ans_step = max(1, min(ans_step, len(logits_hist)))
+        logits = logits_hist[ans_step - 1][b : b + 1]
+        y = batch_on_device.y[b : b + 1]
+        pred = torch.argmax(logits, dim=-1)
+        if batch_on_device.y_mask is not None:
+            m = batch_on_device.y_mask[b : b + 1].bool()
+            correct += int((pred.eq(y) & m).sum().item())
+            denom += int(m.sum().item())
+        else:
+            correct += int(pred.eq(y).sum().item())
+            denom += int(y.numel())
+    return float(correct) / float(max(denom, 1))
+
+
+def _metrics_for_stop_steps(
+    *,
+    stop_steps: list[int],
+    pmf_per_k: list[torch.Tensor],
+    logits_hist: list[torch.Tensor],
+    batch_on_device,
+    task,
+    answer_policies: list[str],
+) -> dict[str, float]:
+    sums_by_policy: dict[str, dict[str, float]] = {p: {} for p in answer_policies}
+    B = len(stop_steps)
+    for b, s in enumerate(stop_steps):
+        pmf_at_stop = pmf_per_k[s - 1][b]
+        for pol in answer_policies:
+            ans_step = _choose_answer_step(s, pmf_at_stop, pol)
+            ans_step = max(1, min(ans_step, len(logits_hist)))
+            m = task.compute_metrics(
+                logits_hist[ans_step - 1][b : b + 1],
+                type(batch_on_device)(
+                    x_tokens=batch_on_device.x_tokens[b : b + 1],
+                    y=batch_on_device.y[b : b + 1],
+                    y_mask=None if batch_on_device.y_mask is None else batch_on_device.y_mask[b : b + 1],
+                    y_weight=None if batch_on_device.y_weight is None else batch_on_device.y_weight[b : b + 1],
+                ),
+            )
+            ps = sums_by_policy[pol]
+            for mk, mv in m.items():
+                if mk == "token_acc":
+                    # Pooled below so ``token_acc_*`` matches ``last_token_acc`` batch semantics.
+                    continue
+                ps[mk] = ps.get(mk, 0.0) + float(mv)
+
+    out: dict[str, float] = {}
+    for pol in answer_policies:
+        micro_tok = _micro_pooled_token_acc_for_answer_policy(
+            stop_steps=stop_steps,
+            pmf_per_k=pmf_per_k,
+            logits_hist=logits_hist,
+            batch_on_device=batch_on_device,
+            answer_policy=pol,
+        )
+        sums_by_policy[pol]["token_acc"] = micro_tok
+
+    for pol, ps in sums_by_policy.items():
+        for mk, mv in ps.items():
+            if mk == "token_acc":
+                out[f"{mk}_{pol}"] = float(mv)
+            else:
+                out[f"{mk}_{pol}"] = mv / max(B, 1)
+    if answer_policies:
+        primary = answer_policies[0]
+        for k, v in list(out.items()):
+            suffix = f"_{primary}"
+            if k.endswith(suffix):
+                out[k[: -len(suffix)]] = v
+    return out
 
 
 def eval_stopping_from_yaml(
@@ -92,6 +213,7 @@ def eval_stopping_from_yaml(
     honest_split_ratio: float = 0.0,
     selection_metric: str = "token_acc",
     selection_mode: str = "max",
+    answer_policies: str = "last,argmax_interval",
 ) -> dict:
     exp = load_experiment_config(config_path)
     device = resolve_device(exp.train.device)
@@ -110,6 +232,9 @@ def eval_stopping_from_yaml(
     n_sup = int(max_steps or exp.model.get("N_sup", 16))
     dist_models = _parse_csv_str(distribution_models)
     strategy_names = _parse_csv_str(strategies)
+    answer_policy_names = _parse_csv_str(answer_policies)
+    if not answer_policy_names:
+        answer_policy_names = ["last"]
     threshold_vals = _parse_csv_float(threshold_grid)
     budget_vals = _parse_csv_float(budget_grid)
     use_amp = bool(exp.train.amp) and device.type == "cuda"
@@ -124,6 +249,7 @@ def eval_stopping_from_yaml(
     last_step_sum: dict[str, float] = {}
     last_step_loss_sum = 0.0
     last_step_count = 0
+    per_step_token_acc_sum = [0.0] * n_sup
     split_ratio = float(max(0.0, min(1.0, honest_split_ratio)))
     split_enabled = 0.0 < split_ratio < 1.0
     use_progress = bool(exp.train.progress_bar) if progress_bar is None else bool(progress_bar)
@@ -161,6 +287,7 @@ def eval_stopping_from_yaml(
         aux_hist: list[torch.Tensor] = []
         logits_hist: list[torch.Tensor] = []
         ce_hist: list[torch.Tensor] = []
+        acc_hist: list[torch.Tensor] = []
         with torch.no_grad():
             for sup_step in range(1, n_sup + 1):
                 st = SchedulerState(
@@ -185,11 +312,16 @@ def eval_stopping_from_yaml(
                 if h_t is not None:
                     aux_hist.append(h_t)
                 ce_hist.append(_per_sample_token_ce(out.logits.detach(), y, y_mask, y_weight))
+                acc_hist.append(_per_sample_token_acc(out.logits.detach(), y, y_mask, y_weight))
                 prev_aux = out.aux_tensor
                 state = out.state
 
         if not logits_hist:
             continue
+        for si, logits_t in enumerate(logits_hist):
+            step_metrics = task.compute_metrics(logits_t, batch_on_device)
+            if "token_acc" in step_metrics:
+                per_step_token_acc_sum[si] += float(step_metrics["token_acc"])
         last_logits = logits_hist[-1]
         last_loss = task.compute_loss(last_logits, batch_on_device)
         last_step_loss_sum += float(last_loss.detach().item())
@@ -199,10 +331,11 @@ def eval_stopping_from_yaml(
         last_step_count += 1
         aux_stack = torch.stack(aux_hist, dim=1)  # [B,T,D]
         ce_stack = torch.stack(ce_hist, dim=0)  # [T,B]
+        acc_stack = torch.stack(acc_hist, dim=0)  # [T,B]
         T = ce_stack.size(0)
-        idx = torch.arange(1, T + 1, device=device, dtype=ce_stack.dtype)[:, None]
-        costs = ce_stack + float(getattr(model, "cfg_oracle", getattr(model, "cfg", None)).oracle_distribution_lambda if hasattr(getattr(model, "cfg_oracle", None), "oracle_distribution_lambda") else 0.0) * idx
-        tau_star = torch.argmin(costs, dim=0) + 1  # [B], 1..T
+        tau_star = torch.argmax(acc_stack, dim=0) + 1  # [B], 1..T — best masked token accuracy step
+        tau_idx_opt = (tau_star - 1).clamp_min(0)
+        ce_opt = ce_stack[tau_idx_opt, torch.arange(ce_stack.size(1), device=device)]
 
         for dist_model in dist_models:
             pmf_per_k: list[torch.Tensor] = []
@@ -235,28 +368,17 @@ def eval_stopping_from_yaml(
                                 sample_pmfs = [pmf_per_k[k][b] for k in range(T)]
                                 s = apply_stopping_strategy("cumulative_probability", sample_pmfs, threshold=th)
                                 stop_steps.append(s)
-                            mean_steps = float(torch.tensor(stop_steps, dtype=torch.float32).mean().item())
-                            if mean_steps > budget:
-                                continue
                             stop_tensor = torch.tensor(stop_steps, device=device)
-                            regret = costs[stop_tensor - 1, torch.arange(stop_tensor.numel(), device=device)] - costs.min(dim=0).values
-                            metric_acc: dict[str, float] = {}
-                            for b, s in enumerate(stop_steps):
-                                m = task.compute_metrics(
-                                    logits_hist[s - 1][b : b + 1],
-                                    type(batch_on_device)(
-                                        x_tokens=batch_on_device.x_tokens[b : b + 1],
-                                        y=batch_on_device.y[b : b + 1],
-                                        y_mask=None
-                                        if batch_on_device.y_mask is None
-                                        else batch_on_device.y_mask[b : b + 1],
-                                        y_weight=None
-                                        if batch_on_device.y_weight is None
-                                        else batch_on_device.y_weight[b : b + 1],
-                                    ),
-                                )
-                                for mk, mv in m.items():
-                                    metric_acc[mk] = metric_acc.get(mk, 0.0) + float(mv)
+                            idx_batch = torch.arange(stop_tensor.numel(), device=device)
+                            regret = ce_stack[(stop_tensor - 1).clamp_min(0), idx_batch] - ce_opt
+                            metric_acc = _metrics_for_stop_steps(
+                                stop_steps=stop_steps,
+                                pmf_per_k=pmf_per_k,
+                                logits_hist=logits_hist,
+                                batch_on_device=batch_on_device,
+                                task=task,
+                                answer_policies=answer_policy_names,
+                            )
                             rec = {
                                 "distribution_model": dist_model,
                                 "strategy": "budget",
@@ -269,7 +391,7 @@ def eval_stopping_from_yaml(
                                 "ece": _expected_calibration_error(torch.cat(conf_per_k), torch.cat(corr_per_k)),
                             }
                             for mk, mv in metric_acc.items():
-                                rec[mk] = mv / max(len(stop_steps), 1)
+                                rec[mk] = mv
                             records.append(rec)
                             if split_tag == "calibration":
                                 records_calibration.append(rec)
@@ -279,21 +401,21 @@ def eval_stopping_from_yaml(
 
                 for th in threshold_vals:
                     stop_steps = []
-                    metric_acc: dict[str, float] = {}
                     for b in range(x_tokens.size(0)):
                         sample_pmfs = [pmf_per_k[k][b] for k in range(T)]
                         s = apply_stopping_strategy(strategy_l, sample_pmfs, threshold=th)
                         stop_steps.append(s)
-                        m = task.compute_metrics(logits_hist[s - 1][b : b + 1], type(batch_on_device)(
-                            x_tokens=batch_on_device.x_tokens[b : b + 1],
-                            y=batch_on_device.y[b : b + 1],
-                            y_mask=None if batch_on_device.y_mask is None else batch_on_device.y_mask[b : b + 1],
-                            y_weight=None if batch_on_device.y_weight is None else batch_on_device.y_weight[b : b + 1],
-                        ))
-                        for mk, mv in m.items():
-                            metric_acc[mk] = metric_acc.get(mk, 0.0) + float(mv)
+                    metric_acc = _metrics_for_stop_steps(
+                        stop_steps=stop_steps,
+                        pmf_per_k=pmf_per_k,
+                        logits_hist=logits_hist,
+                        batch_on_device=batch_on_device,
+                        task=task,
+                        answer_policies=answer_policy_names,
+                    )
                     stop_tensor = torch.tensor(stop_steps, device=device)
-                    regret = costs[stop_tensor - 1, torch.arange(stop_tensor.numel(), device=device)] - costs.min(dim=0).values
+                    idx_batch = torch.arange(stop_tensor.numel(), device=device)
+                    regret = ce_stack[(stop_tensor - 1).clamp_min(0), idx_batch] - ce_opt
                     rec = {
                         "distribution_model": dist_model,
                         "strategy": strategy_l,
@@ -305,7 +427,7 @@ def eval_stopping_from_yaml(
                         "ece": _expected_calibration_error(torch.cat(conf_per_k), torch.cat(corr_per_k)),
                     }
                     for mk, mv in metric_acc.items():
-                        rec[mk] = mv / max(len(stop_steps), 1)
+                        rec[mk] = mv
                     records.append(rec)
                     if split_tag == "calibration":
                         records_calibration.append(rec)
@@ -317,11 +439,11 @@ def eval_stopping_from_yaml(
 
     if not records:
         return {"records": []}
-    out = _aggregate_records(records)
+    out = _apply_budget_constraint(_aggregate_records(records))
     honest_selection: list[dict] = []
     if split_enabled and records_calibration and records_evaluation:
-        calib_agg = _aggregate_records(records_calibration)
-        eval_agg = _aggregate_records(records_evaluation)
+        calib_agg = _apply_budget_constraint(_aggregate_records(records_calibration))
+        eval_agg = _apply_budget_constraint(_aggregate_records(records_evaluation))
         eval_by_key = {_record_key(r): r for r in eval_agg}
         for dist_model in dist_models:
             calib_rows = [r for r in calib_agg if str(r.get("distribution_model", "")).lower() == dist_model.lower()]
@@ -343,9 +465,13 @@ def eval_stopping_from_yaml(
         last_step_metrics = {k: v / float(last_step_count) for k, v in last_step_sum.items()}
         last_step_metrics["val_loss"] = last_step_loss_sum / float(last_step_count)
         last_step_metrics["mean_steps"] = float(n_sup)
+    per_step_token_acc: list[float] = []
+    if last_step_count > 0:
+        per_step_token_acc = [per_step_token_acc_sum[i] / float(last_step_count) for i in range(n_sup)]
     result = {
         "records": out,
         "last_step_metrics": last_step_metrics,
+        "per_step_token_acc": per_step_token_acc,
         "honest_split_ratio": split_ratio,
         "honest_selection": honest_selection,
     }

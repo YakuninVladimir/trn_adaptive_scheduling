@@ -9,6 +9,93 @@ from transformers import AutoModel, AutoModelForCausalLM
 
 from diplom.models.base import ModelOutput
 from diplom.models.trm import TRMConfig, _TRMCore
+from diplom.models.trm_oracle import TRMOracle, TRMOracleConfig
+
+
+@dataclass(frozen=True)
+class FrozenLLMTRMOracleConfig(TRMOracleConfig):
+    """TRMOracle whose recurrence input ``x`` is a linear map of frozen LM hidden states (e.g. Falcon)."""
+
+    base_model_name: str = ""
+    freeze_backbone: bool = True
+
+
+class FrozenLLMTRMOracle(TRMOracle):
+    """
+    Same training/eval contract as ``TRMOracle``, but ``x`` at each supervision step comes from
+    ``Linear(backbone(last_hidden_state))`` instead of token embeddings + positional encoding.
+    """
+
+    requires_full_rollout: bool = True
+
+    def __init__(self, cfg: FrozenLLMTRMOracleConfig) -> None:
+        if not str(cfg.base_model_name).strip():
+            raise ValueError("frozen_llm_trm_oracle requires non-empty model.base_model_name (HF model id)")
+        super().__init__(cfg)
+        self._llm_oracle_cfg = cfg
+        self.backbone = AutoModel.from_pretrained(cfg.base_model_name)
+        if cfg.freeze_backbone:
+            for p in self.backbone.parameters():
+                p.requires_grad = False
+        hidden_size = int(self.backbone.config.hidden_size)
+        self.backbone_in_proj = nn.Linear(hidden_size, cfg.d_model)
+        for p in self.embed.parameters():
+            p.requires_grad = False
+        if self.pos is not None:
+            for p in self.pos.parameters():
+                p.requires_grad = False
+
+    def _input_embeddings(self, x_tokens: torch.Tensor) -> torch.Tensor:
+        ctx = torch.no_grad() if self._llm_oracle_cfg.freeze_backbone else torch.enable_grad()
+        with ctx:
+            out = self.backbone(input_ids=x_tokens, output_hidden_states=False, return_dict=True)
+            h = out.last_hidden_state
+        return self.backbone_in_proj(h)
+
+    def forward(
+        self,
+        x_tokens: torch.Tensor,
+        state: tuple[torch.Tensor, torch.Tensor] | None = None,
+        recursion_n: int | None = None,
+        recursion_T: int | None = None,
+    ) -> ModelOutput:
+        B, L = x_tokens.shape
+        if L != self.cfg.seq_len:
+            raise ValueError(f"TRM expects seq_len={self.cfg.seq_len}, got {L}")
+
+        n = int(recursion_n) if recursion_n is not None else self.cfg.L_cycles
+        T = int(recursion_T) if recursion_T is not None else self.cfg.H_cycles
+
+        device = x_tokens.device
+        x = self._input_embeddings(x_tokens)
+        if state is None:
+            y, z = self.init_state(B, device=device)
+        else:
+            y, z = state
+
+        y, z = self._deep_recursion(x, y, z, n=n, T=T)
+
+        logits = self.out_proj(y)
+        aux = y.mean(dim=1)
+
+        loss_parts: dict[str, torch.Tensor] = {}
+        if self.halt_proj is not None:
+            halt_logit = self.halt_proj(aux).squeeze(-1)
+            loss_parts["halt_logit"] = halt_logit
+            loss_parts["halt_prob"] = torch.sigmoid(halt_logit)
+
+        return ModelOutput(logits=logits, aux_tensor=aux, state=(y, z), loss_parts=loss_parts)
+
+    def backbone_parameters(self):
+        oracle_ids = {id(p) for p in self.oracle_parameters()}
+        for name, p in self.named_parameters():
+            if not p.requires_grad:
+                continue
+            if id(p) in oracle_ids:
+                continue
+            if name.startswith("embed.") or name.startswith("pos."):
+                continue
+            yield p
 
 
 @dataclass(frozen=True)

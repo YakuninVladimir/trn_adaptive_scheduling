@@ -404,17 +404,26 @@ class TRMOracle(TRM):
         ce = -(target * torch.log(pred.clamp_min(1e-8))).sum(dim=-1)
         return ce.mean()
 
-    def oracle_loss_from_rollout(self, aux_history_full: torch.Tensor, per_step_psloss: torch.Tensor) -> torch.Tensor:
+    def oracle_loss_from_rollout(
+        self,
+        aux_history_full: torch.Tensor,
+        per_step_psloss: torch.Tensor,
+        *,
+        per_step_acc: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """
         Train oracle on prefix -> best future delta mapping.
 
         aux_history_full: [B, T, D] or [B, T, L, D] when oracle_use_full_y.
-        per_step_psloss:  [T, B] (lower is better)
+        per_step_psloss:  [T, B] token CE per supervision step (lower is better).
+        per_step_acc:     optional [T, B] masked token accuracy per step (higher is better).
+            Distribution-mode oracle targets use tau* = argmax_t per_step_acc[t] (no CE+lambda cost).
+            When omitted, falls back to tau* from minimizing CE + oracle_distribution_lambda * t (legacy).
         """
         mode = (self.cfg_oracle.oracle_target_mode or "delta").lower()
         if mode == "delta":
             return self._oracle_delta_loss_from_rollout(aux_history_full, per_step_psloss)
-        return self.oracle_distribution_loss_from_rollout(aux_history_full, per_step_psloss)
+        return self.oracle_distribution_loss_from_rollout(aux_history_full, per_step_psloss, per_step_acc=per_step_acc)
 
     def _oracle_delta_loss_from_rollout(self, aux_history_full: torch.Tensor, per_step_psloss: torch.Tensor) -> torch.Tensor:
         if aux_history_full.dim() not in (3, 4):
@@ -436,7 +445,13 @@ class TRMOracle(TRM):
             return torch.zeros((), device=aux_history_full.device)
         return torch.stack(losses).mean()
 
-    def oracle_distribution_loss_from_rollout(self, aux_history_full: torch.Tensor, per_step_psloss: torch.Tensor) -> torch.Tensor:
+    def oracle_distribution_loss_from_rollout(
+        self,
+        aux_history_full: torch.Tensor,
+        per_step_psloss: torch.Tensor,
+        *,
+        per_step_acc: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         if aux_history_full.dim() not in (3, 4):
             raise ValueError(
                 f"oracle history must be [B,T,D] or [B,T,L,D], got {tuple(aux_history_full.shape)}"
@@ -445,16 +460,24 @@ class TRMOracle(TRM):
         H = min(int(self.cfg_oracle.oracle_horizon), T)
         device = aux_history_full.device
         losses: list[torch.Tensor] = []
-        step_cost = torch.arange(1, T + 1, device=device, dtype=per_step_psloss.dtype)[:, None]
-        costs = per_step_psloss + float(self.cfg_oracle.oracle_distribution_lambda) * step_cost
-        best_idx = torch.argmin(costs, dim=0)  # [B], absolute best 0..T-1
+        if per_step_acc is None:
+            step_cost = torch.arange(1, T + 1, device=device, dtype=per_step_psloss.dtype)[:, None]
+            scores = -(per_step_psloss + float(self.cfg_oracle.oracle_distribution_lambda) * step_cost)
+            best_idx = torch.argmax(scores, dim=0)
+        else:
+            if tuple(per_step_acc.shape) != tuple(per_step_psloss.shape):
+                raise ValueError(
+                    f"per_step_acc shape {tuple(per_step_acc.shape)} != per_step_psloss {tuple(per_step_psloss.shape)}"
+                )
+            scores = per_step_acc
+            best_idx = torch.argmax(scores, dim=0)  # [B], absolute best 0..T-1
         beta = max(float(self.cfg_oracle.oracle_distribution_beta), 1e-6)
         dist_model = (self.cfg_oracle.oracle_distribution_model or "finite_discrete").lower()
         for s in range(T):
             prefix = aux_history_full[:, : s + 1]
             target = torch.zeros(B, H, device=device, dtype=per_step_psloss.dtype)
             if dist_model in ("smoothed_loss", "smoothed"):
-                smoothed = torch.softmax(-costs[:H, :].transpose(0, 1) / beta, dim=-1)
+                smoothed = torch.softmax(scores[:H, :].transpose(0, 1) / beta, dim=-1)
                 target = smoothed
             else:
                 clamped = best_idx.clamp_max(H - 1)

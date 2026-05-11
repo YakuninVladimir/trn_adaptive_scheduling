@@ -5,8 +5,9 @@ Oracle forward uses prefix sequences per supervision step: either full ``y``
 ``[B, L, d_model]`` (default ``oracle_use_full_y``) or mean-pooled ``aux_tensor``
 ``[B, d_model]``. Stacked history is ``[B, T, L, D]`` or ``[B, T, D]``.
 
-Training uses ``oracle_loss_from_rollout(aux_history_full, per_step_psloss)`` with
-``per_step_psloss`` ``[T, B]`` (weighted per-sample CE).
+Training uses ``oracle_loss_from_rollout(aux_history_full, per_step_psloss, per_step_acc=...)`` with
+``per_step_psloss`` ``[T, B]`` (weighted per-sample CE) and optional ``per_step_acc`` ``[T, B]`` (masked token
+accuracy). When ``per_step_acc`` is provided, distribution-mode oracle targets use ``tau* = argmax_t acc[t]``.
 
 Storage:
   - schema_version 1: one batch per file (legacy), or single-batch dict shape.

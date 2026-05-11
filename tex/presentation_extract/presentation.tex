@@ -1,0 +1,400 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usepackage{fontspec}
+\usepackage[russian]{babel}
+\setmainfont{DejaVu Sans}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+
+\usepackage{amsmath,mathtools}
+\usepackage{booktabs,tabularx,array,multirow}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{ragged2e}
+\usetikzlibrary{arrows.meta,positioning,calc,shapes.misc}
+\pgfplotsset{compat=1.18}
+
+% --- style ---
+\definecolor{msuBlue}{HTML}{123A63}
+\definecolor{textDark}{HTML}{1B1B1B}
+\definecolor{softBlue}{HTML}{EAF1F8}
+\definecolor{lineGray}{HTML}{D9E1E8}
+\definecolor{mutedText}{HTML}{52616F}
+\definecolor{pointBlue}{HTML}{1F77B4}
+\definecolor{goodGreen}{HTML}{2E7D32}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{blocks}[rounded][shadow=false]
+\setbeamertemplate{itemize item}{\color{msuBlue}$\blacktriangleright$}
+\setbeamertemplate{itemize subitem}{\color{msuBlue}$\circ$}
+\setbeamertemplate{footline}{}
+\setbeamertemplate{headline}{\vspace{1mm}\hspace{5mm}\color{lineGray}\rule{\dimexpr\paperwidth-10mm}{0.4pt}\vspace{-1mm}}
+
+\setbeamercolor{normal text}{fg=textDark,bg=white}
+\setbeamercolor{frametitle}{fg=msuBlue,bg=white}
+\setbeamercolor{title}{fg=msuBlue}
+\setbeamercolor{block title}{fg=white,bg=msuBlue}
+\setbeamercolor{block body}{fg=textDark,bg=softBlue}
+\setbeamerfont{frametitle}{size=\Large,series=\bfseries}
+\setbeamerfont{title}{size=\Huge,series=\bfseries}
+\setbeamersize{text margin left=8mm,text margin right=8mm}
+
+\newcommand{\tight}{\vspace{-1mm}}
+\newcommand{\term}[1]{\textbf{\color{msuBlue}#1}}
+\newcommand{\smallnote}[1]{{\color{mutedText}\small #1}}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\title{Поиск оптимального критерия остановки итеративной процедуры}
+\author{Якунин Владимир Петрович}
+\date{2026}
+
+\begin{document}
+
+% 1
+\begin{frame}[plain]
+\centering
+\vspace{1mm}
+{\color{msuBlue}\rule{0.80\paperwidth}{0.7pt}}\par
+\vspace{5mm}
+{\color{msuBlue}\bfseries\fontsize{21}{25}\selectfont Поиск оптимального критерия\\[1mm] остановки итеративной процедуры}\par
+\vspace{4mm}
+{\color{msuBlue}\rule{16mm}{1.0pt}}\par
+\vspace{4mm}
+{\large Защита выпускной квалификационной работы}\par
+\vspace{6mm}
+{\normalsize\bfseries Якунин Владимир Петрович}\par
+\vspace{1.5mm}
+{\normalsize Научный руководитель: Хохлов Юрий Степанович}\par
+\vspace{5mm}
+{\small МГУ имени М. В. Ломоносова, ВМК, кафедра математической статистики}\par
+\vfill
+{\normalsize 2026}\par
+\vspace{1mm}
+\end{frame}
+
+% 2
+\begin{frame}{1. Задача в простых словах}
+\begin{block}{Что нужно сделать}
+Для каждой позиции текста выбрать, сколько внутренних уточнений выполнить перед выдачей прогноза следующего токена.
+\end{block}
+
+\vspace{2mm}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.53\textwidth}
+\small
+\term{Оракул} — лучший шаг, выбранный постфактум: известны правильный ответ и потери на всех шагах.\par\vspace{2mm}
+\term{Время остановки} — номер внутреннего шага, на котором рекурсивная процедура прекращается.\par\vspace{2mm}
+\term{Оптимальность} — минимум суммы ошибки прогноза и штрафа за вычисления.
+\end{column}
+\begin{column}{0.42\textwidth}
+\begin{tikzpicture}[node distance=5mm, every node/.style={font=\small}]
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm] (a) {префикс текста};
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of a] (b) {внутренние шаги};
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of b] (c) {распределение времени};
+\node[draw=msuBlue,rounded corners,fill=softBlue,minimum width=40mm,minimum height=7mm,below=of c] (d) {правило остановки};
+\draw[-{Latex[length=2mm]},thick,color=msuBlue] (a)--(b);
+\draw[-{Latex[length=2mm]},thick,color=msuBlue] (b)--(c);
+\draw[-{Latex[length=2mm]},thick,color=msuBlue] (c)--(d);
+\end{tikzpicture}
+\end{column}
+\end{columns}
+\end{frame}
+
+% 3
+\begin{frame}{2. Что было до этой работы}
+\small
+\small\begin{tabularx}{\textwidth}{@{}p{0.31\textwidth}Y@{}}
+\toprule
+\textbf{Направление} & \textbf{Что дает для постановки} \\
+\midrule
+Последовательный анализ и оптимальная остановка & язык риска, остановки и сравнения правил: Вальд, Снелл, Ширяев.\\[1mm]
+Статистическая теория решений & разделяет прогноз неизвестной величины и действие, принимаемое по прогнозу.\\[1mm]
+Адаптивная глубина и ранний выход нейросетей & показывают, что вычисления можно тратить неравномерно, но часто используют эвристику уверенности.\\[1mm]
+Малые рекурсивные модели & дают механизм многократного уточнения скрытого состояния одним рекурсивным ядром.\\
+\bottomrule
+\end{tabularx}
+
+\vspace{4mm}
+\vspace{2mm}
+\smallnote{Разрыв: вместо прямой эвристики остановки оценивается полный закон оракульного времени, а правило строится поверх него.}
+\end{frame}
+
+% 4
+\begin{frame}{3. Основная идея}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.53\textwidth}
+\begin{block}{Оракульная метка}
+\vspace{-1mm}
+\[
+L_{t,k}=-\log Q_{t,k}(X_{t+1}),
+\]
+\vspace{-3mm}
+\[
+\tau_t^\star=\arg\min_{0\le j\le K}\{L_{t,j}+\lambda c(j)\}.
+\]
+\vspace{-1mm}
+\smallnote{Метка вычисляется только при обучении: нужен правильный следующий токен и вся траектория шагов.}
+\end{block}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{block}{Модель времени}
+\vspace{-1mm}
+\[
+\widehat p_{t,k}(j)=P_\theta(\tau_t^\star=j\mid H_{t,k}).
+\]
+\vspace{-1mm}
+На каждом текущем шаге $k$ модель выдает вероятности всех возможных оракульных шагов $j=0,\ldots,K$.
+\end{block}
+\end{column}
+\end{columns}
+
+\vspace{2mm}
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, node distance=4mm]
+\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm] (p) {прошлое: $j<k$};
+\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm,right=of p] (n) {сейчас: $j=k$};
+\node[draw=msuBlue,fill=softBlue,rounded corners,minimum width=32mm,minimum height=8mm,right=of n] (f) {будущее: $j>k$};
+\end{tikzpicture}
+\end{frame}
+
+% 5
+\begin{frame}{4. Что конкретно сделано}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\begin{block}{Модель}
+\begin{itemize}\setlength\itemsep{1.5mm}
+\item рекурсивное уточнение распределения $Q_{t,k}$;
+\item голова времени остановки для $\widehat p_{t,k}$;
+\item разделение прогноза распределения и правила действия.
+\end{itemize}
+\end{block}
+\end{column}
+\begin{column}{0.48\textwidth}
+\begin{block}{Эксперименты}
+\begin{itemize}\setlength\itemsep{1.5mm}
+\item шесть семейств распределений на $\{0,\ldots,K\}$;
+\item пять правил остановки;
+\item проверка на WikiText-103 и ARC-AGI;
+\item сравнение базового обучения и дообучения головы оракула.
+\end{itemize}
+\end{block}
+\end{column}
+\end{columns}
+
+\vspace{3mm}
+\smallnote{Преимущество: правило использует массу вероятности на прошлом, текущем и будущем оптимуме, а не одну эвристику уверенности.}
+\end{frame}
+
+% 6
+\begin{frame}{5. Семейства распределений и правила остановки}
+\small
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.50\textwidth}
+\textbf{Семейства распределений}
+\vspace{1mm}
+
+\begin{tabularx}{\textwidth}{@{}p{0.44\textwidth}Y@{}}
+\toprule
+Конечное дискретное & без формы хвоста \\
+Сглаженная разметка & близкие по риску шаги \\
+Смесь геометрических & ранняя остановка и режимы сложности \\
+Смесь экспоненциальных & компактный спад хвоста \\
+Степенной спад & более медленный хвост \\
+Отрицательное биномиальное & тяжелый хвост \\
+\bottomrule
+\end{tabularx}
+\end{column}
+\begin{column}{0.46\textwidth}
+\textbf{Правила остановки}
+\vspace{1mm}
+
+\begin{tabularx}{\textwidth}{@{}p{0.44\textwidth}Y@{}}
+\toprule
+Накопленная вероятность & $\sum_{j\le k}\widehat p_{t,k}(j)\ge c$ \\
+Малое будущее улучшение & $\sum_{j>k}\widehat p_{t,k}(j)\le \varepsilon$ \\
+Условная интенсивность & $\widehat p(k)/\sum_{j\ge k}\widehat p(j)\ge c_h$ \\
+Квантиль & $q_\alpha\le k$ \\
+Бюджет & $\mathbb E\tau\le C$ \\
+\bottomrule
+\end{tabularx}
+\end{column}
+\end{columns}
+\end{frame}
+
+% 7
+\begin{frame}{6. Как получены численные значения}
+\begin{enumerate}\setlength\itemsep{2.3mm}
+\item Для каждого объекта выполнялись все внутренние шаги до $K=8$.
+\item После этого вычислялись потери по шагам и оракульное время $\tau^\star$.
+\item Для каждого семейства распределений обучалась голова времени остановки.
+\item На контрольной выборке перебирались правила остановки и пороги.
+\item В таблицу попадала лучшая строка для данного семейства по контрольному протоколу.
+\end{enumerate}
+
+\vspace{2mm}
+\smallnote{Метрики: $\bar\tau$ — среднее число шагов; $\textit{tokbest}$ — точность; $NLL_\tau$ — качество прогноза времени.}
+\end{frame}
+
+% 8
+\begin{frame}{7. WikiText-103: таблица результатов}
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{\textwidth}{@{}Y C{14mm} C{15mm} C{16mm} C{15mm}@{}}
+\toprule
+\textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} & $\boldsymbol{NLL_\tau}$ \\
+\midrule
+Конечное дискретное & 0,85 & 3,12 & 0,331 & 1,068 \\
+Сглаженная разметка & 0,60 & 8,00 & 0,326 & 2,058 \\
+Смесь геометрических & 0,85 & 4,02 & \textbf{0,339} & \textbf{0,988} \\
+Смесь экспоненциальных & 0,75 & 3,54 & 0,336 & 1,062 \\
+Степенной спад & 0,75 & 3,66 & 0,334 & 1,089 \\
+Отрицательное биномиальное & 0,90 & 3,74 & 0,328 & 1,274 \\
+\bottomrule
+\end{tabularx}
+
+\vspace{3mm}
+\begin{block}{Вывод}
+Лучший компромисс дают конечное дискретное распределение, смесь экспоненциальных и смесь геометрических. Максимальная точность — у смеси геометрических.
+\end{block}
+\end{frame}
+
+% 9
+\begin{frame}{8. WikiText-103: качество--стоимость}
+\centering
+{\color{msuBlue}\bfseries Чем левее и выше точка, тем лучше}\par\vspace{1mm}
+\begin{tikzpicture}
+\begin{axis}[
+    scale only axis,
+    width=0.82\paperwidth,
+    height=0.58\paperheight,
+    xmin=2.85, xmax=8.35,
+    ymin=0.3252, ymax=0.3406,
+    ytick={0.326,0.328,0.330,0.332,0.334,0.336,0.338,0.340},
+    xlabel={Среднее число внутренних шагов $\bar\tau$},
+    ylabel={Top-1 точность},
+    grid=both,
+    grid style={lineGray!60},
+    tick label style={font=\small},
+    label style={font=\small},
+    scaled ticks=false,
+    yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number format/precision=3},
+    every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue, fill=pointBlue},
+]
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.12,0.331)}; \node[anchor=south west,font=\small] at (axis cs:3.12,0.331) {Конечное дискретное};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(8.00,0.326)}; \node[anchor=south east,font=\small,align=center] at (axis cs:8.00,0.326) {\shortstack{Сглаженная\\разметка}};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(4.02,0.339)}; \node[anchor=north west,font=\small] at (axis cs:4.02,0.339) {Смесь геометрических};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.54,0.336)}; \node[anchor=south west,font=\small] at (axis cs:3.54,0.336) {Смесь экспоненциальных};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.66,0.334)}; \node[anchor=north west,font=\small] at (axis cs:3.66,0.334) {Степенной спад};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.74,0.328)}; \node[anchor=south west,font=\small,align=center] at (axis cs:3.74,0.328) {\shortstack{Отрицательное\\биномиальное}};
+\end{axis}
+\end{tikzpicture}
+\end{frame}
+
+% 10
+\begin{frame}{9. ARC-AGI: таблица результатов}
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{\textwidth}{@{}Y C{14mm} C{15mm} C{16mm} C{15mm}@{}}
+\toprule
+\textbf{Семейство} & \textbf{Порог} & $\boldsymbol{\bar\tau}$ & \textbf{tokbest} & $\boldsymbol{NLL_\tau}$ \\
+\midrule
+Конечное дискретное & 0,90 & 3,44 & 0,730 & 1,126 \\
+Сглаженная разметка & 0,60 & 5,00 & 0,737 & 2,015 \\
+Смесь геометрических & 0,90 & 4,25 & \textbf{0,745} & \textbf{0,974} \\
+Смесь экспоненциальных & 0,80 & 3,50 & 0,742 & 1,099 \\
+Степенной спад & 0,80 & 3,71 & 0,741 & 1,125 \\
+Отрицательное биномиальное & 0,90 & 3,85 & 0,731 & 1,271 \\
+\bottomrule
+\end{tabularx}
+
+\vspace{3mm}
+\begin{block}{Вывод}
+Максимальная точность — у смеси геометрических. Смесь экспоненциальных близка по качеству и требует меньше шагов.
+\end{block}
+\end{frame}
+
+% 11
+\begin{frame}{10. ARC-AGI: качество--стоимость}
+\centering
+{\color{msuBlue}\bfseries Чем левее и выше точка, тем лучше}\par\vspace{1mm}
+\begin{tikzpicture}
+\begin{axis}[
+    scale only axis,
+    width=0.82\paperwidth,
+    height=0.58\paperheight,
+    xmin=3.32, xmax=5.18,
+    ymin=0.7282, ymax=0.7468,
+    ytick={0.730,0.735,0.740,0.745},
+    xlabel={Среднее число внутренних шагов $\bar\tau$},
+    ylabel={Токеновая точность},
+    grid=both,
+    grid style={lineGray!60},
+    tick label style={font=\small},
+    label style={font=\small},
+    scaled ticks=false,
+    yticklabel style={/pgf/number format/fixed,/pgf/number format/zerofill,/pgf/number format/precision=3},
+    every axis plot/.append style={only marks, mark=*, mark size=3.1pt, draw=pointBlue, fill=pointBlue},
+]
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.44,0.730)}; \node[anchor=north west,font=\small] at (axis cs:3.44,0.730) {Конечное дискретное};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(5.00,0.737)}; \node[anchor=south east,font=\small,align=center] at (axis cs:5.00,0.737) {\shortstack{Сглаженная\\разметка}};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(4.25,0.745)}; \node[anchor=north west,font=\small,align=center] at (axis cs:4.25,0.745) {\shortstack{Смесь\\геометрических}};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.50,0.742)}; \node[anchor=south west,font=\small] at (axis cs:3.50,0.742) {Смесь экспоненциальных};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.71,0.741)}; \node[anchor=north west,font=\small] at (axis cs:3.71,0.741) {Степенной спад};
+\addplot[only marks,mark=*,mark size=3.1pt,draw=pointBlue,fill=pointBlue] coordinates {(3.85,0.731)}; \node[anchor=south west,font=\small,align=center] at (axis cs:3.85,0.731) {\shortstack{Отрицательное\\биномиальное}};
+\end{axis}
+\end{tikzpicture}
+\end{frame}
+
+% 12
+\begin{frame}{11. Дообучение головы оракула}
+\small
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{\textwidth}{@{}Y C{17mm} C{17mm} C{17mm} C{17mm}@{}}
+\toprule
+\multirow{2}{*}{\textbf{Семейство}} & \multicolumn{2}{c}{\textbf{WikiText-103: $\bar\tau$}} & \multicolumn{2}{c}{\textbf{ARC-AGI: $\bar\tau$}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+& до & после & до & после \\
+\midrule
+Конечное дискретное & 3,12 & 1,79 & 3,44 & 1,98 \\
+Смесь геометрических & 4,02 & 1,71 & 4,25 & 1,74 \\
+Степенной спад & 3,66 & 1,94 & 3,71 & 1,87 \\
+Отрицательное биномиальное & 3,74 & 2,41 & 3,85 & 2,35 \\
+\bottomrule
+\end{tabularx}
+
+\vspace{3mm}
+\begin{block}{Вывод}
+Дообучение головы оракула часто уменьшает среднюю глубину при малом изменении точности. Отрицательное биномиальное семейство оказалось более чувствительным.
+\end{block}
+\end{frame}
+
+% 13
+\begin{frame}{12. Итог}
+\begin{block}{Результат работы}
+Сначала оценивается распределение оракульного времени, затем по нему выбирается реализуемый шаг остановки.
+\end{block}
+
+\vspace{2mm}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\textbf{Получено}
+\begin{itemize}\setlength\itemsep{1.5mm}
+\item формальная разметка оракула через риск;
+\item шесть моделей распределения времени;
+\item пять правил остановки;
+\item сводные эксперименты на двух задачах.
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Главный вывод}
+\begin{itemize}\setlength\itemsep{1.5mm}
+\item смесь геометрических часто дает лучшую точность;
+\item смесь экспоненциальных дает сильный компромисс качество--стоимость;
+\item конечное дискретное распределение — простая и устойчивая базовая модель.
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\end{document}

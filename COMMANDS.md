@@ -864,6 +864,17 @@ uv run python scripts/summarize_stopping_eval.py \
 - в переменные окружения процесса подставляются `PAPER=a4` и `PAPERSIZE=a4` (обход поломанного системного `paper`, из‑за которого `xdvipdfmx` падает с «Unrecognized paper format»);
 - в `tex/.latexmkrc` дублируется `PAPER`/`PAPERSIZE` для `latexmk`.
 
+### Презентация для защиты (`tex/presentation`)
+
+Слайды с таблицами WikiText и ARC подставляют данные из `tex/tables/*.csv`; перед `diplom-tex-build` сгенерируйте файл `tex/presentation/presentation_data.tex` (или он уже закоммичен после последнего прогона).
+
+| Порядок | Команда | Описание |
+|---------|---------|-----------|
+| 1 | `uv run python scripts/render_presentation_data.py` | Собирает `presentation_data.tex` из `wikitext_lm_base.csv`, `arc_stopping_base.csv`, `wikitext_lm_ft_compare.csv`, `arc_stopping_finetune_compare.csv`. См. `scripts/render_presentation_data.py --help` (аргументы `--wikitext-base`, `--arc-base`, `--wikitext-ft`, `--arc-ft`, `--out`). |
+| 2 | `uv run diplom-tex-build --workdir tex/presentation --main presentation.tex --out-dir build` | PDF → `tex/presentation/build/presentation.pdf`. |
+
+Краткая инструкция и требования к TeX расписаны в `tex/presentation/README_build.md`.
+
 ---
 
 ## `diplom-draw-arch`
@@ -903,9 +914,32 @@ uv run python scripts/draw_arch_figures.py --out-dir tex/img --dpi 220 --formats
 uv run python scripts/render_wikitext_figs.py --img-dir tex/img --tables-dir tex/tables --dpi 200
 ```
 
+## `render_presentation_data.py`
+
+Генерирует `tex/presentation/presentation_data.tex` для beamer-презентации из CSV таблиц диссера (совпадают с разделами WikiText и ARC).
+
+| Аргумент | По умолчанию | Описание |
+|----------|---------------|-----------|
+| `--wikitext-base` | `tex/tables/wikitext_lm_base.csv` | Сводная таблица WikiText после oracle finetune (как в диссере). |
+| `--arc-base` | `tex/tables/arc_stopping_base.csv` | Сводная таблица ARC best-of-grid. |
+| `--wikitext-ft` | `tex/tables/wikitext_lm_ft_compare.csv` | Колонки «до/после» \(\bar\tau\) для WikiText. |
+| `--arc-ft` | `tex/tables/arc_stopping_finetune_compare.csv` | Колонки «до/после» \(\bar\tau\) для ARC. |
+| `--out`, `-o` | `tex/presentation/presentation_data.tex` | Путь выходного фрагмента LaTeX. |
+
+Пример:
+
+```bash
+uv run python scripts/render_presentation_data.py \
+  --wikitext-base tex/tables/wikitext_lm_base.csv \
+  --arc-base tex/tables/arc_stopping_base.csv \
+  --wikitext-ft tex/tables/wikitext_lm_ft_compare.csv \
+  --arc-ft tex/tables/arc_stopping_finetune_compare.csv \
+  --out tex/presentation/presentation_data.tex
+```
+
 ## `export_wikitext_lm_tex_tables.py`
 
-Строит `tex/tables/wikitext_lm_base.csv` и `tex/tables/wikitext_lm_ft_compare.csv` из `oracle_finetune/stopping_summary.csv` (колонки `top5best`, сравнение до/после FT). Для строк FT-таблицы столбцы «до'' по метрикам берутся из `run_dir/stopping_eval.json`, если файл есть; иначе --- из предыдущего `wikitext_lm_ft_compare.csv` (аргумент `--legacy-ft-csv`).
+Строит `tex/tables/wikitext_lm_base.csv` и `tex/tables/wikitext_lm_ft_compare.csv` из `oracle_finetune/stopping_summary.csv` (колонки `top5best`, сравнение до/после FT). Для строк FT-таблицы столбцы «до'' по метрикам берутся из `run_dir/stopping_eval.json`, если файл есть; иначе — прокси из сводки (`last_step_mean_steps`, `best_token_acc_last`, `best_top5_acc_last`); при полном отсутствии данных допускается подстановка из предыдущего `wikitext_lm_ft_compare.csv` (аргумент `--legacy-ft-csv`).
 
 | Аргумент | По умолчанию | Описание |
 |----------|---------------|-----------|

@@ -8,25 +8,16 @@
 \Month{}
 \City{Москва}
 \AuthorText{Автор:}
-\Author{\todo{Фамилия Имя Отчество}}
-\AuthorEng{\todo{First Last}}
-\AcadGroup{\todo{номер группы}}
-\TitleTop{Вероятностное моделирование времени остановки}
-\TitleMiddle{при рекурсивном прогнозировании речи}
-\TitleBottom{и анализ вычислительной эффективности}
-\TitleTopEng{Probabilistic modelling of stopping time}
-\TitleMiddleEng{for recursive language prediction}
-\TitleBottomEng{and efficiency analysis}
+\Author{Якунин Владимир Петрович}
+\AuthorEng{Vladimir Yakunin}
+\AcadGroup{416}
+\TitleTop{Поиск оптимального критерия остановки итеративной процедуры}
 \docname{Выпускная квалификационная работа}
-\Advisor{\todo{Фамилия И.О.}}
-\AdvisorDegree{\todo{степень, звание}}
+\AdvisorDegree{}
+\Advisor{Хохлов Юрий Степанович, профессор, д.~ф-м.~н.}
 
 \Abstract{
-В работе рассматривается задача выбора числа внутренних вычислительных шагов в рекурсивной языковой модели. Основная прикладная задача состоит в предсказании следующей языковой единицы по уже наблюденному префиксу. Число внутренних уточнений не задается заранее как постоянное для всех позиций, а рассматривается как объект статистического моделирования. Для каждой позиции текста по последовательности потерь определяется оракульное время остановки, минимизирующее сумму ошибки прогноза и штрафа за вычисления. Основная модель оценивает условное распределение этого оракульного времени по информации, доступной на текущем внутреннем шаге. Правило остановки строится как отдельная надстройка над полученным распределением. Описаны вероятностная модель речи, побочная модель ARC-AGI, шесть параметрических семейств для распределения времени остановки, пять правил остановки, схема переиспользования малых языковых моделей. Приведены результаты валидационного свипа на ARC-AGI: таблицы лучших правил остановки по сетке, эмпирическое распределение оракульного момента остановки, сравнение базового обучения и дообучения только головы оракула.
-}
-
-\AbstractEng{
-This thesis studies the choice of the number of inner computational refinement steps in a recursive language model. The number of inner steps is treated statistically. An oracle stopping time is defined from the loss sequence and computational costs; the model estimates its conditional distribution given information at the current inner step, while stopping decisions use separate rules. We give the probabilistic formulation, six distribution families for stopping time, five stopping rules, reuse of small language models, and ARC-AGI validation sweep results including oracle-only fine-tuning comparison.
+В работе рассматривается задача выбора числа внутренних вычислительных шагов в малой рекурсивной языковой модели~\cite{trm}. Основная прикладная задача состоит в предсказании следующей языковой единицы по уже наблюденному префиксу. Число внутренних уточнений не задаётся заранее одинаково для всех позиций, а рассматривается как объект статистического моделирования. Для каждой позиции текста по последовательности потерь определяется оракульное время остановки, минимизирующее сумму ошибки прогноза и штрафа за вычисления. Основная модель оценивает условное распределение этого оракульного времени по информации, доступной на текущем внутреннем шаге. Правило остановки строится как отдельная надстройка над полученным распределением. Описаны вероятностная модель речи, побочная постановка ARC-AGI, шесть параметрических семейств для распределения времени остановки, пять правил остановки, схема переиспользования малых языковых моделей. Приведены результаты на WikiText-103 и на контрольной выборке ARC-AGI после перебора по решётке: таблицы лучших правил остановки, эмпирическое распределение оракульного момента остановки, сравнение базового обучения и дополнительного обучения только головы оракула.
 }
 
 \TitlePageText{Титульная страница}
@@ -52,14 +43,16 @@ This thesis studies the choice of the number of inner computational refinement s
 \input{chapters/00_intro.tex}
 \input{chapters/01_problem.tex}
 \input{chapters/02_arc.tex}
-\input{chapters/03_recursive_slm.tex}
-\input{chapters/04_distributions.tex}
-\input{chapters/05_stopping_rules.tex}
-\input{chapters/06_training_eval.tex}
-\input{chapters/07_experiments.tex}
-\input{chapters/08_results_figures.tex}
-\input{chapters/09_discussion.tex}
-\input{chapters/10_conclusion.tex}
+\input{chapters/03_architecture_models.tex}
+\input{chapters/04_recursive_slm.tex}
+\input{chapters/05_distributions.tex}
+\input{chapters/06_stopping_rules.tex}
+\input{chapters/07_training_eval.tex}
+% \input{chapters/08_experiments.tex}
+\input{chapters/09_results_figures.tex}
+\input{chapters/10_arc_results.tex}
+\input{chapters/10_discussion.tex}
+\input{chapters/11_conclusion.tex}
 
 \clearpage
 \printbibliography[title={Список литературы}]

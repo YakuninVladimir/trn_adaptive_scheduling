@@ -1,0 +1,129 @@
+\section{Результаты языкового моделирования на WikiText-103}\label{sec:wikitext_results}
+
+\DTLloadrawdb{wikibase}{tables/wikitext_lm_base.csv}%
+\DTLloadrawdb{wikift}{tables/wikitext_lm_ft_compare.csv}%
+\DTLloadrawdb{wikitauhist}{tables/wikitext_tau_hist_val.csv}%
+\newcommand{\WikiTauHistRows}{}%
+\DTLforeach*{wikitauhist}{\ZcA=step,\ZcB=count,\ZcC=probability}{%
+  \csname protected@edef\endcsname\DTtabrow{\ZcA & \ZcB & \noexpand\DTLtabnum{\ZcC}\noexpand\\\noexpand\hline}%
+  \expandafter\appto\expandafter\WikiTauHistRows\expandafter{\DTtabrow}%
+}%
+\newcommand{\WikiLmBaseRows}{}%
+\DTLforeach*{wikibase}{\ZcA=family,\ZcB=strategy,\ZcC=threshold,\ZcD=meantau,\ZcE=tokbest,\ZcF=top5best,\ZcG=nlltau}{%
+  \csname protected@edef\endcsname\DTtabrow{\noexpand\DTLkeycell{\ZcA} & \noexpand\DTLkeycell{\ZcB} & \noexpand\DTLtabnum{\ZcC} & \noexpand\DTLtabnum{\ZcD} & \noexpand\DTLtabnum{\ZcE} & \noexpand\DTLtabnum{\ZcF} & \noexpand\DTLtabnum{\ZcG}\noexpand\\\noexpand\hline}%
+  \expandafter\appto\expandafter\WikiLmBaseRows\expandafter{\DTtabrow}%
+}%
+\newcommand{\WikiFtRows}{}%
+\DTLforeach*{wikift}{\ZcA=family,\ZcB=policybase,\ZcC=policyft,\ZcD=tokbase,\ZcE=tokft,\ZcF=top5base,\ZcG=top5ft,\ZcH=taubase,\ZcI=tauft}{%
+  \csname protected@edef\endcsname\DTtabrow{\noexpand\DTLkeycell{\ZcA} & \ZcB & \ZcC & \noexpand\DTLtabnum{\ZcD} & \noexpand\DTLtabnum{\ZcE} & \ZcF & \ZcG & \noexpand\DTLtabnum{\ZcH} & \noexpand\DTLtabnum{\ZcI}\noexpand\\\noexpand\hline}%
+  \expandafter\appto\expandafter\WikiFtRows\expandafter{\DTtabrow}%
+}%
+
+Под корпусом WikiText-103~\cite{merity2016} выбрана та же связка конфигураций семейства распределения времени, правила остановки на контроле и критерия отбора, что описана для ARC-AGI в разд.~\ref{sec:arc_pipeline}; здесь объект прогноза --- следующий токен, а качество задаётся долей топ-1 по кандидатам выходного словаря после остановки; в таблицах дополнительно приведена доля топ-5 на валидации (попадание истинного токена в пять лучших логитов). Ниже по тексту численные столбцы согласованы с протоколом оценки после перебора на контроле (\(K{=}8\)); в актуальной серии представлены пять обученных семейств PMF (строки сводки по имеющимся прогонам \texttt{oracle\_finetune}).
+
+\subsection{Динамика базового обучения TRM}
+
+На рис.~\ref{fig:wikitext_train_loss}--\ref{fig:wikitext_train_val_loss} для ветки \texttt{finite\_discrete} показаны характерные кривые \emph{базового} обучения полной модели (без отдельного этапа \texttt{oracle\_finetune}): снижение основной функции потерь; рост токеновой точности на обучении и валидации (отдельный график без второй оси); убывание валидационного риска на отдельной шкале.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{wikitext_trm_train_loss.png}
+\caption{WikiText-103, \texttt{finite\_discrete}: основная обучающая потеря и суммарная потеря (EMA). Базовое обучение TRM.}
+\label{fig:wikitext_train_loss}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{wikitext_trm_train_val_acc.png}
+\caption{WikiText-103, \texttt{finite\_discrete}: токеновая точность на обучении и валидации (EMA), одна ось. Базовое обучение TRM.}
+\label{fig:wikitext_train_val_acc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{wikitext_trm_train_val_loss.png}
+\caption{WikiText-103, \texttt{finite\_discrete}: валидационный loss (EMA). Базовое обучение TRM.}
+\label{fig:wikitext_train_val_loss}
+\end{figure}
+
+\subsection{Эмпирическое распределение оракульного \(\tau^\star\)}
+
+На рис.~\ref{fig:wikitext_tau_hist} приведено эмпирическое распределение индекса шага \(\tau^\star\in\{1,\ldots,K\}\), на котором достигается максимум пакетно агрегированной токеновой точности по внутренним шагам, для варианта «\texttt{finite\_discrete}» после базового прохода обучения. Как и для решёточных задач ARC-AGI, заметная доля массы приходится на малые значения \(\tau^\star\): для многих пакетов хватает одного--двух внутренних шагов, однако остаётся и перераспределение на промежуточные индексы.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{wikitext_tau_star_hist_val.png}
+\caption{Распределение \(\tau^\star\) по номеру шага (топ-1 точность следующего токена). WikiText-103, \texttt{finite\_discrete}, \(K{=}8\).}
+\label{fig:wikitext_tau_hist}
+\end{figure}
+
+
+\subsection{Сводка по семействам распределений (базовое обучение)}
+
+Табл.~\ref{tab:wikitext_lm_base} устроена аналогично табл.~\ref{tab:arc_base}: по одному семейству --- одна строка после выбора лучшей связки правила на контроле среди результатов решётки. Имена полей \(\bar{\tau}\) и \(\mathrm{NLL}_\tau\) трактуются так же, как в табл.~\ref{tab:arc_base}; столбцы \(\mathrm{tok}_{\mathrm{best}}\) и \(\mathrm{top5}_{\mathrm{best}}\) отражают топ-1 и топ-5 на языковых позициях в точке остановки.
+
+\begin{table}[H]
+\centering
+\caption{WikiText-103 (контрольная выборка): лучшая по решётке комбинация правила после дообучения головы оракула (\texttt{oracle\_finetune}).}
+\label{tab:wikitext_lm_base}
+\footnotesize\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{44mm}|>{\raggedright\arraybackslash}p{22mm}|c|c|c|c|c|}
+\hline
+Семейство (ключ) & Стратегия (ключ) & Порог & \(\bar{\tau}\) & \(\mathrm{tok}_{\mathrm{best}}\) & \(\mathrm{top5}_{\mathrm{best}}\) & \(\mathrm{NLL}_\tau\) \\
+\hline
+\WikiLmBaseRows
+\end{tabular}
+\end{table}
+
+Абсолютные значения \(\mathrm{tok}_{\mathrm{best}}\) умеренны относительно крупных открытых языковых систем: постановка использует малую рекурсивную сборку над замороженным эмбеддером и ограниченный ресурс обучения, поэтому сравнимость рядом в таблице важнее абсолютного уровня.
+
+\subsection{Влияние дополнительного обучения только головы оракула}
+
+Табл.~\ref{tab:wikitext_lm_ft} повторяет логику табл.~\ref{tab:arc_ft}: на контроле заново подбирается режим правила для базового чекпоинта и для версии после донастройки только головы оракула. Для столбцов «до'' по метрикам качества и \(\mathrm{top5}\) для части семейств сохранены значения предыдущей базовой оценки на контроле, если в корне прогона отсутствует файл \texttt{stopping\_eval.json} (см. маркер «\texttt{---}'' в столбце \(\mathrm{top5}\)).
+
+\begin{table}[H]
+\centering
+\caption{Сравнение базового обучения и дополнительного обучения головы оракула (WikiText-103).}
+\label{tab:wikitext_lm_ft}
+\footnotesize\setlength{\tabcolsep}{2pt}\renewcommand{\arraystretch}{1.12}%
+\begin{tabularx}{\linewidth}{%
+  |>{\raggedright\arraybackslash}p{44mm}%
+  |>{\centering\arraybackslash}p{21mm}%
+  |>{\centering\arraybackslash}p{21mm}%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X|}
+\hline
+\makecell[l]{Семейство\\\small(\textit{ключ})}
+ & \multicolumn{2}{c|}{\makecell[c]{Стратегия / порог\\[-1pt]\small связка на контроле}}
+ & \multicolumn{2}{c|}{\(\mathrm{tok}_{\mathrm{best}}\)}
+ & \multicolumn{2}{c|}{\(\mathrm{top5}\) (val.)}
+ & \multicolumn{2}{c|}{\(\bar{\tau}\)} \\
+\cline{2-9}
+ & \makecell[c]{до} & \makecell[c]{после\\\small гол.~орак.}
+ & до & после & до & после & до & после \\
+\hline
+\WikiFtRows
+\end{tabularx}
+\end{table}
+
+Для \texttt{smoothed\_loss} оптимальная связка стратегии и порога на контроле сохраняется; для смесей и степенного семейства после \texttt{oracle\_finetune} чаще выигрывают более ранние остановки при почти неизменном топ-1 и топ-5. Для ветки \texttt{finite\_discrete} базовая и дообученная оценки на контроле согласованы в одном масштабе метрик.
+
+\subsection{Кривая качество--стоимость}
+
+Рисунок~\ref{fig:wikitext_quality_cost} задаёт точечное представление задачи качество--глубина в тех же координатах, что и для ARC (таблица результатов здесь служит источником координат).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{wikitext_quality_cost_best.png}
+\caption{Среднее число шагов и топ-1 точность по табл.~\ref{tab:wikitext_lm_base} (WikiText-103, \texttt{oracle\_finetune}).}
+\label{fig:wikitext_quality_cost}
+\end{figure}
+
+Выделяются три недоминируемые точки среди пяти семейств: \texttt{mixture\_exponential} с минимальным средним числом шагов \(\bar{\tau}{\approx}3{,}06\) и \(\mathrm{tok}_{\mathrm{best}}{\approx}0{,}743\); \texttt{mixture\_geometric} как компромисс \(\bar{\tau}{\approx}3{,}12\) и чуть более высоким \(\mathrm{tok}_{\mathrm{best}}{\approx}0{,}743\); \texttt{smoothed\_loss} с максимальной в группе точностью \(\mathrm{tok}_{\mathrm{best}}{\approx}0{,}744\) при \(\bar{\tau}{=}5\) (ранняя остановка по накопленной вероятности не окупается по качеству). Семейства \texttt{finite\_discrete} и \texttt{power} доминируются \texttt{mixture\_geometric} в указанном паретовском смысле: у геометрической смеси одновременно не больше \(\bar{\tau}\) и не ниже \(\mathrm{tok}_{\mathrm{best}}\).
+
+\paragraph{Вывод.}
+Для языкового моделирования на WikiText лучше всего себя показывают смеси (\texttt{mixture\_geometric}, \texttt{mixture\_exponential}) с правилом накопленной вероятности и умеренно высоким порогом либо \texttt{smoothed\_loss}, если допустима большая средняя глубина: локальная структура потерь по шагам ближе к гладкой, и «жёсткие'' одно- и двухпараметрические PMF реже совпадают с фактической формой улучшений по итерациям. Это согласуется с тем, что следующий токен предсказывается в условиях сильного сглаживания по контексту, и распределение момента остановки должно допускать гибкий перенос массы между близкими шагами.

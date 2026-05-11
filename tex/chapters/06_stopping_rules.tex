@@ -74,16 +74,20 @@
 \centering
 \caption{Пять правил остановки}
 \label{tab:stopping_rules}
-\begin{tabularx}{\textwidth}{lYY}
-\toprule
+\begin{tabularx}{\textwidth}{|l|Y|Y|}
+\hline
 Правило & Условие остановки & Что контролирует \\
-\midrule
+\hline
 Накопленная вероятность & \(\sum_{j\le k}\widehat p_k(j)\ge c\) & вероятность, что оптимум уже наступил \\
+\hline
 Малое будущее улучшение & \(\sum_{j>k}\widehat p_k(j)\le\varepsilon\) & остаточную пользу продолжения \\
+\hline
 Условная интенсивность & \(\widehat p_k(k)/\sum_{j\ge k}\widehat p_k(j)\ge c_h\) & текущий шаг среди не прошедших \\
-Квантиль & \(q_\alpha(k)\le k\) & надежный уровень остановки \\
+\hline
+Квантиль & \(q_\alpha(k)\le k\) & надёжный уровень остановки \\
+\hline
 Бюджет & \(\E\tau\le C\) & среднюю стоимость вычислений \\
-\bottomrule
+\hline
 \end{tabularx}
 \end{table}
 

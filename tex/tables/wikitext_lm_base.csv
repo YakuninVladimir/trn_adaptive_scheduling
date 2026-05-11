@@ -1,7 +1,6 @@
-family,strategy,threshold,meantau,regret,tokbest,nlltau
-finite_discrete,cumulative_probability,0.85,3.12,0.0064,0.331,1.068
-smoothed_loss,cumulative_probability,0.6,8.00,0.0081,0.326,2.058
-mixture_geometric,cumulative_probability,0.85,4.02,0.0093,0.339,0.988
-mixture_exponential,cumulative_probability,0.75,3.54,0.0136,0.336,1.062
-power,cumulative_probability,0.75,3.66,0.0251,0.334,1.089
-negative_binomial,cumulative_probability,0.9,3.74,0.0087,0.328,1.274
+family,strategy,threshold,meantau,tokbest,top5best,nlltau
+finite_discrete,hazard,0.9,4.733073,0.743315,0.591788,0.784137
+smoothed_loss,cumulative_probability,0.6,5.0,0.743721,0.59168,2.08307
+mixture_geometric,cumulative_probability,0.9,3.117188,0.743362,0.591416,0.824911
+mixture_exponential,cumulative_probability,0.9,3.061198,0.743312,0.591369,0.821896
+power,hazard,0.9,4.664062,0.743248,0.591701,0.84308

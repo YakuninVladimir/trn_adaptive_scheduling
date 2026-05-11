@@ -31,11 +31,15 @@
 
 \usepackage{amsmath,amssymb,amsfonts,mathtools,bm}
 \usepackage{graphicx}
+\usepackage{adjustbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,fit,shapes.geometric,matrix,bending}
 \usepackage{etoolbox}
 \usepackage{datatool}
 \usepackage{siunitx}
 \sisetup{output-decimal-marker={,},range-phrase={--},detect-weight=true,detect-inline-family=text}
-\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{booktabs,longtable,tabularx,array,multirow,makecell}
+\usepackage{xstring}
 \usepackage{xcolor}
 \usepackage{indentfirst}
 \usepackage{url}
@@ -64,10 +68,17 @@
 \setlist[itemize]{noitemsep,topsep=0.2em,leftmargin=1.25cm}
 \setlist[enumerate]{noitemsep,topsep=0.2em,leftmargin=1.25cm}
 \captionsetup{labelsep=period,font=small}
+% Плотнее сетка в таблицах с |\hline|.
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{5pt}
 \sloppy
 \frenchspacing
 
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+% Перенос длинных программных имён семейства/стратегии (WikiText и ARC таблицы).
+\newcommand{\DTLkeycell}[1]{\texttt{\footnotesize\raggedright\StrSubstitute{#1}{_}{\_\allowbreak }}}
+% Числа в таблицах результатов: 4 знака после запятой (округление siunitx).
+\newcommand{\DTLtabnum}[1]{\num[round-mode=places, round-precision=4]{#1}}
 \newcommand{\placeholder}{\textemdash}
 \newcommand{\todo}[1]{\textcolor{gray}{[заполнить: #1]}}
 \DeclareMathOperator*{\argmin}{arg\,min}

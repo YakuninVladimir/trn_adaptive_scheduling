@@ -138,11 +138,7 @@
     \clearpage
     \pdfbookmark[1]{\@AbstractText}{bm:abstract}
     \section*{\centering \@AbstractText}
-    \begin{center}
-      \@TitleTop\ifdefined\@TitleMiddle\\\@TitleMiddle\fi
-      \ifdefined\@TitleBottom\\\@TitleBottom\fi\\[\baselineskip]
-      \textit{\@Author}
-    \end{center}
+    \vspace{0.75\baselineskip}
     \oneandhalfspace
     \@Abstract
     \clearpage

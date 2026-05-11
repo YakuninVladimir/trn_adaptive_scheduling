@@ -1,0 +1,131 @@
+\section{Результаты на ARC-AGI}\label{sec:arc_results}
+
+\DTLloadrawdb{arcbase}{tables/arc_stopping_base.csv}%
+\DTLloadrawdb{arcft}{tables/arc_stopping_finetune_compare.csv}%
+\DTLloadrawdb{tauhist}{tables/tau_star_hist_finite_discrete_val.csv}%
+\newcommand{\TauHistRows}{}%
+\DTLforeach*{tauhist}{\ZcA=step,\ZcB=count,\ZcC=probability}{%
+  \csname protected@edef\endcsname\DTtabrow{\ZcA & \ZcB & \noexpand\DTLtabnum{\ZcC}\noexpand\\\noexpand\hline}%
+  \expandafter\appto\expandafter\TauHistRows\expandafter{\DTtabrow}%
+}%
+\newcommand{\ArcBaseRows}{}%
+\DTLforeach*{arcbase}{\ZcA=family,\ZcB=strategy,\ZcC=threshold,\ZcD=meantau,\ZcE=regret,\ZcF=tokbest,\ZcG=nlltau}{%
+  \csname protected@edef\endcsname\DTtabrow{\noexpand\DTLkeycell{\ZcA} & \noexpand\DTLkeycell{\ZcB} & \noexpand\DTLtabnum{\ZcC} & \noexpand\DTLtabnum{\ZcD} & \noexpand\DTLtabnum{\ZcE} & \noexpand\DTLtabnum{\ZcF} & \noexpand\DTLtabnum{\ZcG}\noexpand\\\noexpand\hline}%
+  \expandafter\appto\expandafter\ArcBaseRows\expandafter{\DTtabrow}%
+}%
+\newcommand{\ArcFtRows}{}%
+\DTLforeach*{arcft}{\ZcA=family,\ZcB=policybase,\ZcC=policyft,\ZcD=tokbase,\ZcE=tokft,\ZcF=taubase,\ZcG=tauft}{%
+  \csname protected@edef\endcsname\DTtabrow{\noexpand\DTLkeycell{\ZcA} & \ZcB & \ZcC & \noexpand\num{\ZcD} & \noexpand\num{\ZcE} & \noexpand\num{\ZcF} & \noexpand\num{\ZcG}\noexpand\\\noexpand\hline}%
+  \expandafter\appto\expandafter\ArcFtRows\expandafter{\DTtabrow}%
+}%
+
+\subsection{Динамика базового обучения TRM}
+
+На рис.~\ref{fig:arc_train_loss}--\ref{fig:arc_train_val_loss} для ветки \texttt{delta} приведены кривые \emph{базового} обучения полной модели на данных ARC-AGI (без этапа \texttt{oracle\_finetune}): основная потеря; токеновая точность train/val на одной оси (ряд \texttt{exact\_acc} на график не выносится, чтобы не смешивать шкалы смыслов); валидационный loss отдельно.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{arc_trm_train_loss.png}
+\caption{ARC-AGI, \texttt{delta}: основная обучающая потеря и суммарная потеря (EMA). Базовое обучение TRM.}
+\label{fig:arc_train_loss}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{arc_trm_train_val_acc.png}
+\caption{ARC-AGI, \texttt{delta}: токеновая точность на обучении и валидации (EMA), одна ось. Базовое обучение TRM.}
+\label{fig:arc_train_val_acc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{arc_trm_train_val_loss.png}
+\caption{ARC-AGI, \texttt{delta}: валидационный loss (EMA). Базовое обучение TRM.}
+\label{fig:arc_train_val_loss}
+\end{figure}
+
+\subsection{Эмпирическое распределение оракульного \(\tau^\star\)}
+
+На рис.~\ref{fig:arc_tau_hist} показано эмпирическое распределение индекса шага \(\tau^\star\in\{1,\ldots,K\}\), на котором достигается максимум \emph{пакетно агрегированной} токеновой точности по цепочке внутренних шагов (аргумент максимума по шагам надзора, \(K{=}8\); контрольный прогон для варианта «\texttt{finite\_discrete}»). То есть для каждого пакета примеров строится кривая точности против номера шага, затем \(\tau^\star\) --- номер её максимума; столбики на графике задают доли пакетов, для которых максимум пришёлся на указанном шаге. Доля около \(\tau^\star{=}1\) доминирует, но заметная масса попадает и на несколько более поздних шагов --- однородный запуск на полную глубину смешивает простые и сложные примеры.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{arc_tau_star_hist_val.png}
+\caption{Распределение \(\tau^\star\) по шагам (потокенная точность). ARC-AGI, ветка \texttt{finite\_discrete}, \(K{=}8\).}
+\label{fig:arc_tau_hist}
+\end{figure}
+
+
+\subsection{Сводка по семействам распределений (базовое обучение)}
+
+Ниже (табл.~\ref{tab:arc_base}) каждая \textbf{строка соответствует одному семейству распределений} момента остановки после базового обучения (название в первом столбце --- имя конфигурации в серии экспериментов). Для каждого семейства по полной решётке стратегий остановки и порогам выбирается одна строка, дающая максимум токеновому качеству по лучшему среди интервалов кандидатов ответов (интегральный критерий отбора в протоколе оценки остановки). В таблице явно сохранены программные имена строк для семейства и стратегии; числовые поля переведены ниже на русские термины.
+
+\textbf{Столбцы.}
+\textit{Порог} --- параметр используемого правила (число; здесь всюду стратегия накопленной вероятности).
+\textit{\(\bar\tau\)} --- среднее фактически выполненное число внутренних шагов при выбранном правиле.
+\textit{Потери к оракулу} --- среднее отклонение суммарного риска относительно оракульного выбора (постфактум, сводная величина в протоколе оценки).
+\textit{\(\mathrm{tok}_{\mathrm{best}}\)} --- достигнутое токеновое качество в точке остановки по лучшей из рассматриваемых гипотез ответа.
+\textit{\(\mathrm{NLL}_\tau\)} --- отрицательная логарифмическая потеря в момент остановки.
+
+\begin{table}[H]
+\centering
+\caption{ARC-AGI (контрольная выборка): лучшая по решётке комбинация правила после базового обучения.}
+\label{tab:arc_base}
+\footnotesize\setlength{\tabcolsep}{3pt}
+\begin{tabular}{|l|l|c|c|c|c|c|}
+\hline
+Семейство (ключ) & Стратегия (ключ) & Порог & \(\bar{\tau}\) & Потери к оракулу & \(\mathrm{tok}_{\mathrm{best}}\) & \(\mathrm{NLL}_\tau\) \\
+\hline
+\ArcBaseRows
+\end{tabular}
+\end{table}
+
+Доля полностью точных решёток ARC на уровне токена близка к нулю, что типично для пошаговой разметки на сложных задачах.
+
+\subsection{Влияние дополнительного обучения только головы оракула}
+
+Табл.~\ref{tab:arc_ft} сохраняет ту же связку столбцов для метрик качества \(\mathrm{tok}_{\mathrm{best}}\) и \(\bar{\tau}\), но сравнивает \emph{до} и \emph{после} дополнительного обучения только головы оракула. В блоке «режим и порог» указаны связки «стратегия / порог», найденные по контрольной выборке отдельно для базовой и донастроенной сохранённой модели (повторный подбор на той же решётке).
+
+\begin{table}[H]
+\centering
+\caption{Сравнение базового обучения и дополнительного обучения головы оракула (ARC-AGI). В столбцах метрик «после'' --- сохранённая модель после донастройки только головы оракула (подбор стратегии и порога на контрольной выборке, как до).}
+\label{tab:arc_ft}
+\footnotesize\setlength{\tabcolsep}{2pt}\renewcommand{\arraystretch}{1.12}%
+\begin{tabularx}{\linewidth}{%
+  |>{\raggedright\arraybackslash}p{38mm}%
+  |>{\centering\arraybackslash}p{21mm}%
+  |>{\centering\arraybackslash}p{21mm}%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X%
+  |>{\centering\arraybackslash}X|}
+\hline
+\makecell[l]{Семейство\\\small(\textit{ключ})}
+ & \multicolumn{2}{c|}{\makecell[c]{Стратегия / порог\\[-1pt]\small связка на контроле}}
+ & \multicolumn{2}{c|}{\(\mathrm{tok}_{\mathrm{best}}\)}
+ & \multicolumn{2}{c|}{\(\bar{\tau}\)} \\
+\cline{2-7}
+ & \makecell[c]{до} & \makecell[c]{после\\\small гол.~орак.}
+ & до & после & до & после \\
+\hline
+\ArcFtRows
+\end{tabularx}
+\end{table}
+
+Для \texttt{smoothed\_loss} дополнительное обучение головы не меняет оптимальную строку сводки. Для \texttt{finite\_discrete}, \texttt{mixture\_geometric} и \texttt{power} оптимальное правило смещается в сторону более агрессивной ранней остановки (\texttt{hazard} или меньший порог \texttt{cumulative\_probability}), при этом \(\mathrm{tok}_{\mathrm{best}}\) меняется незначительно. Для \texttt{negative\_binomial} наблюдается небольшое снижение \(\mathrm{tok}_{\mathrm{best}}\) после донастройки головы; интерпретация этого факта обсуждается в разд.~\ref{sec:discussion}.
+
+\subsection{Кривая качество--стоимость}
+
+Полное семейство кривых «качество--среднее число шагов» при изменении каждого порога по всей решётке здесь не приводится (это многомерный объект). На рис.~\ref{fig:quality_cost} показано согласованное с табл.~\ref{tab:arc_base} сечение задачи качество--стоимость в шести точках (по одной на семейство): абсцисса --- \(\bar{\tau}\) после перебора, ордината --- \(\mathrm{tok}_{\mathrm{best}}\).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{arc_quality_cost_best.png}
+\caption{Среднее число шагов и токеновая точность по табл.~\ref{tab:arc_base} (контроль, ARC-AGI, базовое обучение).}
+\label{fig:quality_cost}
+\end{figure}
+
+Интерпретируя рис.~\ref{fig:quality_cost} как набор вариантов с двумя целями --- повысить \(\mathrm{tok}_{\mathrm{best}}\) и уменьшить \(\bar{\tau}\) при фиксированном протоколе перебора --- можно выделить паретовский поднабор недоминируемых решений. Одна точка не хуже другой только если у неё не больше среднее число шагов \emph{и} не ниже \(\mathrm{tok}_{\mathrm{best}}\), причём хотя бы одно из неравенств строгое. В указанном сечении недоминируемы три семейства: \texttt{finite\_discrete} (минимальное \(\bar{\tau}\approx 3{,}44\) при наименьшей среди них точности \(\approx 0{,}73\)); \texttt{mixture\_exponential} (компромисс \(\bar{\tau}\approx 3{,}50\), \(\mathrm{tok}_{\mathrm{best}}\approx 0{,}74\)); \texttt{mixture\_geometric} (максимум \(\mathrm{tok}_{\mathrm{best}}\approx 0{,}75\) при наибольшем \(\bar{\tau}\approx 4{,}25\) среди тройки). Точки \texttt{power}, \texttt{negative\_binomial} и \texttt{smoothed\_loss} доминируются семейством \texttt{mixture\_exponential} или \texttt{mixture\_geometric} в указанном смысле: для них есть вариант одновременно с меньшим \(\bar{\tau}\) и с не меньшей токеновой точностью по числам табл.~\ref{tab:arc_base}.
+
+\paragraph{Вывод.}
+На ARC-AGI сильнее оказываются те же смесевые семейства и накопленная вероятность с умеренным порогом, а также \texttt{finite\_discrete} как вариант с минимальной глубиной при приемлемом качестве: решёточная постановка смешивает редкие «простые'' и частые «трудные'' примеры, и распределение остановки должно допускать как ранний выход, так и удлинение цепочки рассуждений. Это согласуется с дискретной природой задачи и разреженностью сигнала точности по шагам по сравнению с «плавным'' языковым моделированием.

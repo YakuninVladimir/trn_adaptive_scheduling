@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import torch
 
+from diplom.runner.tasks.base import TaskBatch
 from diplom.runner.tasks.text_lm_task import TextLMTask, TextLMTaskConfig
 
 
@@ -93,3 +94,30 @@ def test_text_task_fraction_selects_subset():
     assert len(train_dl.dataset) == 2
     assert val_dl is not None
     assert len(val_dl.dataset) == 3
+
+
+def test_text_metrics_include_top5_accuracy():
+    cfg = TextLMTaskConfig(
+        dataset_name="wikitext",
+        tokenizer="distilbert-base-uncased",
+        seq_len=4,
+    )
+    task = TextLMTask(cfg)
+    logits = torch.full((2, 4, 6), -100.0)
+    y = torch.tensor(
+        [
+            [1, 2, 3, 4],
+            [5, 1, 0, 2],
+        ],
+        dtype=torch.long,
+    )
+    # Keep true class in top-5, while argmax is wrong for most positions.
+    logits[..., 0] = 5.0  # wrong top-1 baseline
+    logits.scatter_(-1, y.unsqueeze(-1), 4.0)  # true class is second-best => in top-5
+    logits[0, 0, 1] = 6.0  # one correct top-1 token
+    mask = torch.ones_like(y, dtype=torch.bool)
+    batch = TaskBatch(x_tokens=torch.zeros_like(y), y=y, y_mask=mask)
+    m = task.compute_metrics(logits, batch)
+    assert "token_acc" in m
+    assert "top5_acc" in m
+    assert m["top5_acc"] >= m["token_acc"]

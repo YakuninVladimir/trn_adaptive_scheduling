@@ -18,6 +18,9 @@ runs/
 # LaTeX build output (latexmk -outdir=build)
 tex/build/
 
+# Beamer презентация (latexmk в tex/presentation)
+tex/presentation/build/
+
 # LaTeX intermediates when building from tex/ (not outdir=build)
 tex/*.aux
 tex/*.bbl
